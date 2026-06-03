@@ -317,7 +317,7 @@ def daily_report():
     # 本周投递统计
     week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime("%Y-%m-%d")
     app_stats = db.execute(
-        "SELECT status, COUNT(*) as cnt FROM applications WHERE date(created_at) >= ? GROUP BY status",
+        "SELECT status, COUNT(*) as cnt FROM applications WHERE date(applied_at) >= ? GROUP BY status",
         (week_start,)
     ).fetchall()
 
@@ -350,7 +350,7 @@ def daily_report():
             actions.append("🔥 最佳匹配：「" + top_match["title"] + "」(" + top_match["company"] + ")，综合分 " + str(top_match["overlap_score"]) + "，建议优先投递")
     if top_gaps:
         actions.append("📚 技能提升建议：学习 " + top_gaps[0][0] + "（" + str(top_gaps[0][1]) + " 个岗位要求）")
-    recent_apps = db.execute("SELECT COUNT(*) FROM applications WHERE date(created_at) >= ?", (week_start,)).fetchone()[0]
+    recent_apps = db.execute("SELECT COUNT(*) FROM applications WHERE date(applied_at) >= ?", (week_start,)).fetchone()[0]
     if recent_apps == 0:
         actions.append("📋 本周尚未投递，建议从精选推荐中选出 Top3 投递")
     elif recent_apps < 3:
@@ -452,6 +452,23 @@ def search_jobs(q: str = Query(""), page: int = Query(1)):
     ).fetchall()
     db.close()
     return {"items": dict_rows(rows), "total": total}
+
+# ── Sources ────────────────────────────────────────────
+@app.get("/api/jobs/sources")
+def get_job_sources():
+    db = get_db()
+    rows = db.execute(
+        "SELECT source_platform, COUNT(*) as cnt FROM jobs GROUP BY source_platform ORDER BY cnt DESC"
+    ).fetchall()
+    sources = []
+    for r in rows:
+        sources.append({
+            "platform": r["source_platform"],
+            "count": r["cnt"],
+            "label": PLATFORM_LABELS.get(r["source_platform"], r["source_platform"]),
+        })
+    db.close()
+    return {"sources": sources, "all_platforms": list(PLATFORM_LABELS.keys())}
 
 # ── Job Detail ─────────────────────────────────────────
 @app.get("/api/jobs/{job_id}")
@@ -797,22 +814,6 @@ def get_feedback_history(limit: int = Query(20)):
     db.close()
     return dict_rows(rows)
 
-# ── Sources ────────────────────────────────────────────
-@app.get("/api/jobs/sources")
-def get_job_sources():
-    db = get_db()
-    rows = db.execute(
-        "SELECT source_platform, COUNT(*) as cnt FROM jobs GROUP BY source_platform ORDER BY cnt DESC"
-    ).fetchall()
-    sources = []
-    for r in rows:
-        sources.append({
-            "platform": r["source_platform"],
-            "count": r["cnt"],
-            "label": PLATFORM_LABELS.get(r["source_platform"], r["source_platform"]),
-        })
-    db.close()
-    return {"sources": sources, "all_platforms": list(PLATFORM_LABELS.keys())}
 
 # ── Custom Source ──────────────────────────────────────
 @app.post("/api/custom-source")
