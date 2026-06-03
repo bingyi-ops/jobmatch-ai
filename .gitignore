@@ -1,0 +1,62 @@
+# =====================
+# Node / Frontend
+# =====================
+node_modules/
+dist/
+build/
+.vite/
+
+# =====================
+# Python / Backend
+# =====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+.eggs/
+*.egg
+venv/
+.venv/
+env/
+
+# =====================
+# Database & Data
+# =====================
+*.db
+*.sqlite
+*.sqlite3
+
+# =====================
+# Logs
+# =====================
+*.log
+stderr.txt
+stdout.txt
+server_output.txt
+
+# =====================
+# Environment & Secrets
+# =====================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# =====================
+# IDE & Editor
+# =====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# =====================
+# OS
+# =====================
+.DS_Store
+Thumbs.db
