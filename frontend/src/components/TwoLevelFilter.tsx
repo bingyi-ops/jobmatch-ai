@@ -13,12 +13,9 @@ const PLATFORMS = [
   { value: 'boss_zhipin', label: 'Boss直聘' },
   { value: 'xiaohongshu', label: '小红书' },
   { value: 'wechat_public', label: '公众号' },
-  { value: 'liepin', label: '猎聘' },
-  { value: 'lagou', label: '拉勾' },
-  { value: 'zhilian', label: '智联' },
   { value: 'referral', label: '内推' },
   { value: 'school_career', label: '就业网' },
-  { value: 'custom', label: '自定义' },
+  { value: 'custom', label: '招聘平台' },
 ]
 
 const TYPES = [

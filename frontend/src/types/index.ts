@@ -1,4 +1,4 @@
-export type Platform = 'official' | 'boss_zhipin' | 'xiaohongshu' | 'wechat_public' | 'liepin' | 'lagou' | 'zhilian' | '51job' | 'shixiseng' | 'zhihu' | 'referral' | 'school_career' | 'bilibili' | 'douyin' | 'weibo' | 'custom';
+export type Platform = 'official' | 'boss_zhipin' | 'xiaohongshu' | 'wechat_public' | 'liepin' | 'lagou' | 'zhilian' | '51job' | 'shixiseng' | 'zhihu' | 'referral' | 'school_career' | 'bilibili' | 'douyin' | 'weibo' | 'custom' | 'url_import';
 export type RecruitType = 'daily_intern' | 'summer_intern' | 'autumn_recruit' | 'spring_recruit' | 'experienced';
 export type ApplicationStatus = 'applied' | 'interviewing' | 'offer' | 'rejected';
 export type IgnoreReason = 'salary_too_low' | 'location_mismatch' | 'skill_mismatch' | 'not_interested';
@@ -20,6 +20,8 @@ export interface Job {
   custom_source_url?: string;
   application_deadline: string;
   posted_at: string;
+  quality_score: number;
+  quality_flags: string[];
 }
 
 export interface JdProfile {
@@ -80,11 +82,14 @@ export interface ResumeProfile {
   interest_profile?: {
     preferred_industries: string[];
     preferred_roles: string[];
-    work_style: string[];
+    preferred_cities?: string[];
+    salary_min?: number;
+    work_style?: string[];
   };
   ability_profile?: {
     skills: string[];
     education: string;
+    major?: string;
     experience: string;
     projects: string[];
   };
@@ -218,4 +223,13 @@ export const PLATFORM_LABELS: Record<string, string> = {
   douyin: '抖音',
   weibo: '微博',
   custom: '自定义来源',
+  url_import: 'URL导入',
 };
+
+// ── 用户反馈 ───────────────────────────────────────────
+export interface UserFeedbackForm {
+  type: 'bug' | 'feature';
+  title: string;
+  description: string;
+  contact?: string;
+}

@@ -1,7 +1,10 @@
+"""
+匹配引擎 - 旧版已废弃，所有匹配逻辑已迁移至 main.py 的 run_match_for_all()。
+保留此文件以防止导入错误。
+"""
 import json
 import random
 from datetime import datetime
-from ..database import database
 
 # Skill Jaccard similarity
 def jaccard(set_a: set, set_b: set) -> float:

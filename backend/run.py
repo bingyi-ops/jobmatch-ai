@@ -1,38 +1,21 @@
-"""Entry point: init DB + seed data + start server."""
-import asyncio
-import os
+"""JobMatch AI 启动入口
+在 uvicorn 创建 event loop 之前设置好 Windows 兼容配置。
+"""
 import sys
-import uvicorn
+import asyncio
 
-sys.path.insert(0, os.path.dirname(__file__))
-
-from app.database import database
-
-
-async def init_db():
-    await database.connect()
-    schema_path = os.path.join(os.path.dirname(__file__), "..", "data", "schema.sql")
-    with open(schema_path, "r") as f:
-        sql = f.read()
-    for stmt in sql.split(";"):
-        stmt = stmt.strip()
-        if stmt:
-            await database.execute(stmt)
-    await database.disconnect()
-    print("✅ Database initialized")
-
+# ── Windows + Python 3.14+: 修复 Playwright 子进程兼容性 ──
+# 必须在创建任何 event loop 之前调用！
+if sys.platform == "win32":
+    # Python 3.14 默认 ProactorEventLoop 不支持子进程传输
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    print("[OK] Windows SelectorEventLoop enabled")
 
 if __name__ == "__main__":
-    asyncio.run(init_db())
-
-    # Seed if no jobs exist
-    import subprocess
-    result = subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "seed_data.py")])
-    if result.returncode == 0:
-        print("✅ Seed complete")
-    else:
-        print("⚠️  Seed may have failed, check above output")
-
-    print("\n🚀 Starting JobMatch AI Server at http://localhost:8000")
-    print("📋 API Docs: http://localhost:8000/docs\n")
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+    )

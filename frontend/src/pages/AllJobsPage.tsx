@@ -5,10 +5,10 @@ import JobCard from '../components/JobCard'
 import SearchBar from '../components/SearchBar'
 import TwoLevelFilter from '../components/TwoLevelFilter'
 import Pagination from '../components/Pagination'
-import CustomSourceModal from '../components/CustomSourceModal'
+import ImportJobModal from '../components/ImportJobModal'
 import { ListSkeleton } from '../components/Skeleton'
 import { useToast } from '../components/Toast'
-import { Briefcase, Clock, AlertCircle } from 'lucide-react'
+import { Briefcase, Clock, AlertCircle, Plus, ShieldOff } from 'lucide-react'
 
 interface DateGroup {
   label: string
@@ -24,7 +24,9 @@ export default function AllJobsPage() {
   const [platform, setPlatform] = useState('')
   const [type, setType] = useState('')
   const [search, setSearch] = useState('')
-  const [showCustomModal, setShowCustomModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [editingJob, setEditingJob] = useState<Job | null>(null)
+  const [cleaning, setCleaning] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -47,12 +49,35 @@ export default function AllJobsPage() {
     setLoading(false)
   }
 
-  const handleCustomSourceSuccess = () => {
-    setShowCustomModal(false)
+  const handleImportSuccess = () => {
+    setShowImportModal(false)
+    setEditingJob(null)
     loadJobs(page)
   }
 
-  // 按日期分组：今天 / 昨天 / 近3天 / 近7天 / 更早
+  const handleEditJob = (job: Job) => {
+    setEditingJob(job)
+    setShowImportModal(true)
+  }
+
+  const handleJobDeleted = () => {
+    loadJobs(page)
+  }
+
+  const handleCleanup = async () => {
+    if (!window.confirm('将自动清理非岗位内容（如新闻早报、科技文章等）。\n此操作不可撤销，是否继续？')) return
+    setCleaning(true)
+    try {
+      const res = await api.rescoreAllJobs()
+      toast('success', res.message)
+      loadJobs(page)
+    } catch (e: any) {
+      toast('error', e?.message || '清理失败')
+    }
+    setCleaning(false)
+  }
+
+  // 按日期分组：今天 / 昨天 / 更早
   const groups = useMemo<DateGroup[]>(() => {
     if (!jobs.length) return []
     const now = new Date()
@@ -96,22 +121,37 @@ export default function AllJobsPage() {
               </span>
             )}
           </h1>
-          {/* 快捷统计 */}
-          <div className="hidden sm:flex items-center gap-4 text-xs text-gray-500">
+          {/* 快捷统计 + 数据清理 */}
+          <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500">
             <span className="flex items-center gap-1">
               <Clock className="w-3.5 h-3.5" />
               按发布时间排序
             </span>
+            <button onClick={handleCleanup} disabled={cleaning}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors disabled:opacity-50"
+              title="清理非岗位内容（如早报、速递、文章等）">
+              <ShieldOff className="w-3.5 h-3.5" />
+              {cleaning ? '清理中...' : '清理数据'}
+            </button>
           </div>
         </div>
 
         <div className="space-y-3">
-          <SearchBar value={search} onChange={v => setSearch(v)} />
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <SearchBar value={search} onChange={v => setSearch(v)} placeholder="搜索岗位标题、公司、如：人力资源、数据分析..." />
+            </div>
+            <button onClick={() => { setEditingJob(null); setShowImportModal(true) }}
+              className="px-3 py-2.5 bg-[#10B981]/80 hover:bg-[#10B981] rounded-lg text-sm text-white font-medium transition-colors flex items-center gap-2 whitespace-nowrap">
+              <Plus className="w-4 h-4" />
+              导入岗位
+            </button>
+          </div>
           <TwoLevelFilter
             platform={platform} type={type}
             onPlatformChange={v => setPlatform(v)}
             onTypeChange={v => setType(v)}
-            onAddCustom={() => setShowCustomModal(true)}
+            onAddCustom={() => { setEditingJob(null); setShowImportModal(true) }}
           />
         </div>
       </div>
@@ -151,7 +191,7 @@ export default function AllJobsPage() {
           </div>
           <div className="space-y-3">
             {group.jobs.map(job => (
-              <JobCard key={job.id} job={job} />
+              <JobCard key={job.id} job={job} onEdit={handleEditJob} onDeleted={handleJobDeleted} />
             ))}
           </div>
         </div>
@@ -161,10 +201,11 @@ export default function AllJobsPage() {
         <Pagination page={page} total={total} pageSize={10} onChange={loadJobs} />
       </div>
 
-      {showCustomModal && (
-        <CustomSourceModal
-          onClose={() => setShowCustomModal(false)}
-          onSuccess={handleCustomSourceSuccess}
+      {showImportModal && (
+        <ImportJobModal
+          onClose={() => { setShowImportModal(false); setEditingJob(null) }}
+          onSuccess={handleImportSuccess}
+          editJob={editingJob}
         />
       )}
     </div>

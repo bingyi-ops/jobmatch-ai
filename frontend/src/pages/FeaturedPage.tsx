@@ -6,10 +6,21 @@ import FeaturedJobCard from '../components/FeaturedJobCard'
 import Pagination from '../components/Pagination'
 import { FeaturedCardSkeleton } from '../components/Skeleton'
 import { useToast } from '../components/Toast'
-import { Star, Sparkles, Upload, TrendingUp, AlertCircle } from 'lucide-react'
+import { Star, Sparkles, Upload, TrendingUp, AlertCircle, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react'
 
 const INDUSTRIES = ['', '互联网', '制造业', '金融', '教育', '医疗', '咨询', '快消']
 const CITIES = ['', '北京', '上海', '广州', '深圳', '杭州', '成都', '武汉', '南京']
+
+function loadWeights() {
+  try {
+    const raw = localStorage.getItem('jm_weights')
+    if (raw) return JSON.parse(raw)
+  } catch {}
+  return { w1: 45, w2: 30, w3: 25, threshold: 60 }
+}
+function saveWeights(w: { w1: number; w2: number; w3: number; threshold: number }) {
+  localStorage.setItem('jm_weights', JSON.stringify(w))
+}
 
 export default function FeaturedPage() {
   const [jobs, setJobs] = useState<JobCard[]>([])
@@ -23,8 +34,14 @@ export default function FeaturedPage() {
   const [type, setType] = useState('')
   const [industry, setIndustry] = useState('')
   const [city, setCity] = useState('')
-  const [minScore, setMinScore] = useState(60)
   const { toast } = useToast()
+
+  // 权重配置 (localStorage 持久化) — 阈值也从这里取，统一管理
+  const [weights, setWeights] = useState(loadWeights)
+  const [showWeights, setShowWeights] = useState(false)
+  const setW1 = (v: number) => { const w = { ...weights, w1: v, w2: Math.max(0, 100 - v - weights.w3), w3: Math.min(100 - v, weights.w3) }; w.w3 = 100 - w.w1 - w.w2; setWeights(w); saveWeights(w) }
+  const setW2 = (v: number) => { const w = { ...weights, w2: v, w1: Math.max(0, 100 - v - weights.w3), w3: Math.min(100 - v, weights.w3) }; w.w3 = 100 - w.w1 - w.w2; setWeights(w); saveWeights(w) }
+  const setThreshold = (v: number) => { const w = { ...weights, threshold: v }; setWeights(w); saveWeights(w) }
 
   useEffect(() => {
     checkResume()
@@ -32,7 +49,7 @@ export default function FeaturedPage() {
 
   useEffect(() => {
     if (hasResume) loadFeatured(1)
-  }, [type, industry, city, minScore, hasResume])
+  }, [type, industry, city, hasResume, weights])
 
   const checkResume = async () => {
     try {
@@ -49,7 +66,7 @@ export default function FeaturedPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await api.getFeatured({ page: p, page_size: 10, min_score: minScore, type, industry, city })
+      const data = await api.getFeatured({ page: p, page_size: 10, min_score: weights.threshold, type, industry, city, w1: weights.w1, w2: weights.w2, w3: weights.w3 })
       setJobs(data.items)
       setTotal(data.total)
       setTodayNew(data.today_new)
@@ -87,8 +104,8 @@ export default function FeaturedPage() {
   }
 
   // 是否有筛选条件激活
-  const hasFilter = type !== '' || industry !== '' || city !== '' || minScore !== 60
-  const clearFilters = () => { setType(''); setIndustry(''); setCity(''); setMinScore(60) }
+  const hasFilter = type !== '' || industry !== '' || city !== '' || weights.threshold !== 60
+  const clearFilters = () => { setType(''); setIndustry(''); setCity(''); setThreshold(60) }
 
   return (
     <div>
@@ -121,6 +138,45 @@ export default function FeaturedPage() {
           </div>
         )}
 
+        {/* 权重/阈值配置面板 */}
+        <div className="bg-[#1E293B]/40 border border-white/5 rounded-xl mb-4 overflow-hidden">
+          <button onClick={() => setShowWeights(!showWeights)}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">
+            <span className="flex items-center gap-2"><SlidersHorizontal className="w-4 h-4" />调分配置 · 我擅长{weights.w1}% 公司需要{weights.w2}% 我喜欢{weights.w3}% · 阈值{weights.threshold}分</span>
+            {showWeights ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+          {showWeights && (
+            <div className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3">
+              <div className="grid grid-cols-3 gap-4 text-xs">
+                <div>
+                  <div className="flex justify-between text-gray-400 mb-1"><span>我擅长</span><span className="text-green-400 font-bold">{weights.w1}%</span></div>
+                  <input type="range" min={10} max={80} value={weights.w1} onChange={e => setW1(Number(e.target.value))}
+                    className="w-full accent-green-500 h-1.5" />
+                </div>
+                <div>
+                  <div className="flex justify-between text-gray-400 mb-1"><span>公司需要</span><span className="text-orange-400 font-bold">{weights.w2}%</span></div>
+                  <input type="range" min={10} max={80} value={weights.w2} onChange={e => setW2(Number(e.target.value))}
+                    className="w-full accent-orange-500 h-1.5" />
+                </div>
+                <div>
+                  <div className="flex justify-between text-gray-400 mb-1"><span>我喜欢</span><span className="text-blue-400 font-bold">{weights.w3}%</span></div>
+                  <input type="range" min={0} max={80} value={weights.w3} onChange={e => {
+                    const v = Number(e.target.value); const w = { ...weights, w3: v, w1: Math.max(10, 100 - v - weights.w2) }; w.w2 = 100 - w.w1 - w.w3; setWeights(w); saveWeights(w)
+                  }} className="w-full accent-blue-500 h-1.5" />
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="text-gray-400">精选阈值</span>
+                <input type="range" min={0} max={100} value={weights.threshold} onChange={e => setThreshold(Number(e.target.value))}
+                  className="flex-1 accent-[#10B981] h-1.5" />
+                <span className="text-[#10B981] font-bold w-8 text-right">{weights.threshold}</span>
+                <button onClick={() => { setThreshold(60); setW1(45) }}
+                  className="text-gray-500 hover:text-white px-2 py-0.5 rounded bg-white/5">重置</button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Filters */}
         <div className="flex flex-wrap gap-3 mb-1 items-center">
           {/* Type */}
@@ -152,9 +208,9 @@ export default function FeaturedPage() {
           {/* Min Score */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500 whitespace-nowrap">最低分:</span>
-            <input type="range" min="0" max="100" value={minScore} onChange={e => setMinScore(Number(e.target.value))}
+            <input type="range" min="0" max="100" value={weights.threshold} onChange={e => setThreshold(Number(e.target.value))}
               className="w-24 accent-[#10B981]" />
-            <span className="text-xs text-[#10B981] font-bold w-8">{minScore}</span>
+            <span className="text-xs text-[#10B981] font-bold w-8">{weights.threshold}</span>
           </div>
 
           {/* Clear filters */}
@@ -166,7 +222,7 @@ export default function FeaturedPage() {
           )}
         </div>
         <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
-          <TrendingUp className="w-3 h-3" /> 按交集综合分从高到低排列 · 仅展示 ≥ {minScore} 分岗位
+          <TrendingUp className="w-3 h-3" /> 按交集综合分从高到低排列 · 仅展示 ≥ {weights.threshold} 分岗位
         </div>
       </div>
 

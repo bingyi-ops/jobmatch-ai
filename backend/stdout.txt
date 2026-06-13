@@ -1,0 +1,8 @@
+
+[Server] JobMatch AI running at http://localhost:8000
+  Health:   http://localhost:8000/api/health
+  All Jobs: http://localhost:8000/api/jobs/all
+  Featured: http://localhost:8000/api/featured
+  Apply:    http://localhost:8000/api/applications
+  Ctrl+C to stop
+

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ExternalLink, Heart, EyeOff, Send } from 'lucide-react'
+import { ExternalLink, Heart, EyeOff, Send, ShieldCheck, ChevronDown, ChevronUp, Info } from 'lucide-react'
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts'
 import { JobCard } from '../types'
 import DeadlineBadge from './DeadlineBadge'
@@ -20,8 +20,14 @@ const TYPE_LABELS: Record<string, string> = {
 export default function FeaturedJobCard({ job, onFeedback }: Props) {
   const navigate = useNavigate()
   const [showIgnoreModal, setShowIgnoreModal] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
   const [feedback, setFeedback] = useState(job.feedback)
   const isNew = job.posted_at && new Date().getTime() - new Date(job.posted_at).getTime() < 24 * 60 * 60 * 1000
+
+  // 评分等级描述
+  const scoreLevel = (s: number) => s >= 85 ? '优秀' : s >= 70 ? '良好' : s >= 55 ? '中等' : '待提升'
+  const scoreColor = (s: number) => s >= 85 ? 'text-green-400' : s >= 70 ? 'text-blue-400' : s >= 55 ? 'text-yellow-400' : 'text-red-400'
+  const scoreBar = (s: number) => s >= 85 ? 'bg-green-500' : s >= 70 ? 'bg-blue-500' : s >= 55 ? 'bg-yellow-500' : 'bg-red-500'
 
   const radarData = [
     { subject: '我喜欢', value: job.interest_score, fullMark: 100 },
@@ -98,6 +104,14 @@ export default function FeaturedJobCard({ job, onFeedback }: Props) {
                 {TYPE_LABELS[job.recruitment_type] || job.recruitment_type}
               </span>
               <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">{job.industry}</span>
+              {(job as any).quality_score > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 ${
+                  (job as any).quality_score >= 70 ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-400'
+                }`}>
+                  <ShieldCheck className="w-2.5 h-2.5" />
+                  {(job as any).quality_score}
+                </span>
+              )}
             </div>
 
             {/* Scores */}
@@ -133,7 +147,59 @@ export default function FeaturedJobCard({ job, onFeedback }: Props) {
 
             {/* Reasons */}
             {job.match_reasons && (
-              <p className="text-xs text-gray-500 line-clamp-2 mb-3">{job.match_reasons}</p>
+              <p className="text-xs text-gray-500 line-clamp-2 mb-2">{job.match_reasons}</p>
+            )}
+
+            {/* 评分详情展开按钮 */}
+            <button onClick={() => setShowDetail(!showDetail)}
+              className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 transition-colors mb-2">
+              {showDetail ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              {showDetail ? '收起评分详情' : '查看评分详情'}
+            </button>
+
+            {/* 展开的评分详情 */}
+            {showDetail && (
+              <div className="bg-[#0B1120] rounded-lg p-3 mb-3 space-y-2 border border-white/5">
+                <p className="text-[10px] text-gray-500 flex items-center gap-1 mb-1">
+                  <Info className="w-3 h-3" /> 三圈评分明细
+                  <span className="text-gray-600">（0-100分制）</span>
+                </p>
+                {[
+                  { label: '我擅长', sub: '学历+技能+项目', score: job.ability_score, icon: '🧠' },
+                  { label: '公司需要', sub: '学历达标+专业对口+经验+职责+稳定性', score: job.market_score, icon: '🏢' },
+                  { label: '我喜欢', sub: '城市+行业+薪资+岗位方向', score: job.interest_score, icon: '❤️' },
+                ].map(dim => (
+                  <div key={dim.label}>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[11px] text-gray-400">
+                        {dim.icon} {dim.label}
+                        <span className="text-gray-600 ml-1">· {dim.sub}</span>
+                      </span>
+                      <span className={`text-[11px] font-bold ${scoreColor(dim.score)}`}>
+                        {dim.score}分 <span className="font-normal text-[10px]">{scoreLevel(dim.score)}</span>
+                      </span>
+                    </div>
+                    <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${scoreBar(dim.score)}`}
+                        style={{ width: `${Math.max(dim.score, 2)}%` }} />
+                    </div>
+                  </div>
+                ))}
+                <div className="pt-1.5 border-t border-white/5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-gray-300 font-semibold">综合匹配度</span>
+                    <span className={`text-sm font-bold ${job.overlap_score >= 80 ? 'text-[#10B981]' : job.overlap_score >= 60 ? 'text-orange-400' : 'text-gray-400'}`}>
+                      {job.overlap_score}分
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-1">
+                    {job.overlap_score >= 80 ? '强烈推荐投递，三圈匹配度均优秀' :
+                     job.overlap_score >= 65 ? '推荐投递，部分维度有提升空间' :
+                     job.overlap_score >= 50 ? '可关注，建议针对性优化简历或拓宽偏好' :
+                     '匹配度偏低，建议提升技能或调整岗位期望'}
+                  </p>
+                </div>
+              </div>
             )}
 
             {/* Actions */}

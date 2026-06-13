@@ -34,7 +34,7 @@ export default function SkillsRadarCompare({ userSkills, jdSkills, userLabel = '
       [userLabel]: Math.round((userHits / max) * 100),
       [jdLabel]: Math.round((jdHits / max) * 100),
     }
-  }).filter(d => d[userLabel] > 0 || d[jdLabel] > 0)
+  }).filter(d => Number(d[userLabel]) > 0 || Number(d[jdLabel]) > 0)
 
   if (data.length === 0) {
     return (

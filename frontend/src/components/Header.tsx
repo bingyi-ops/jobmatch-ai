@@ -1,5 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Target, FileText } from 'lucide-react'
+import { Target, FileText, MessageSquare } from 'lucide-react'
+import { useState } from 'react'
+import FeedbackModal from './FeedbackModal'
 
 const TABS = [
   { path: '/all', label: '全部' },
@@ -9,6 +11,7 @@ const TABS = [
 
 export default function Header() {
   const location = useLocation()
+  const [showFeedback, setShowFeedback] = useState(false)
   const currentTab = TABS.find(t => location.pathname.startsWith(t.path))?.path || '/all'
 
   return (
@@ -39,16 +42,26 @@ export default function Header() {
             ))}
           </nav>
 
-          {/* Resume */}
-          <Link
-            to="/resume"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#10B981]/10 text-[#10B981] rounded-lg hover:bg-[#10B981]/20 transition-colors"
-          >
-            <FileText className="w-4 h-4" />
-            <span className="hidden sm:inline">简历</span>
-          </Link>
+          {/* Right actions */}
+          <div className="flex items-center gap-2">
+            {/* Feedback */}
+            <button onClick={() => setShowFeedback(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              title="反馈与建议">
+              <MessageSquare className="w-4 h-4" />
+              <span className="hidden sm:inline">反馈</span>
+            </button>
+
+            {/* Resume */}
+            <Link to="/resume"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#10B981]/10 text-[#10B981] rounded-lg hover:bg-[#10B981]/20 transition-colors">
+              <FileText className="w-4 h-4" />
+              <span className="hidden sm:inline">简历</span>
+            </Link>
+          </div>
         </div>
       </div>
+      {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} />}
     </header>
   )
 }

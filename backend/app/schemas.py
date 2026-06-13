@@ -103,3 +103,66 @@ class CompanyInfoOut(BaseModel):
     recent_news: str
     culture_keywords: list[str]
     disclaimer: str = "基于公开信息推断，仅供参考"
+
+
+# ── 通知订阅 ──────────────────────────────────────────
+class EmailChannelConfig(BaseModel):
+    enabled: bool = False
+    smtp_host: str = "smtp.qq.com"
+    smtp_port: int = 587
+    username: str = ""
+    password: str = ""
+    to_email: str = ""
+
+
+class WebhookChannelConfig(BaseModel):
+    enabled: bool = False
+    webhook_url: str = ""
+
+
+class NotificationChannelsConfig(BaseModel):
+    email: EmailChannelConfig = EmailChannelConfig()
+    dingtalk: WebhookChannelConfig = WebhookChannelConfig()
+    wecom: WebhookChannelConfig = WebhookChannelConfig()
+    feishu: WebhookChannelConfig = WebhookChannelConfig()
+
+
+class NotificationSettingsOut(BaseModel):
+    channels: NotificationChannelsConfig = NotificationChannelsConfig()
+    schedule_hours: int = 2  # 推送间隔（小时）
+
+
+class SubscriptionOut(BaseModel):
+    companies: list[str] = []
+    industries: list[str] = []
+    cities: list[str] = []
+    keywords: list[str] = []
+
+
+class NotificationLogOut(BaseModel):
+    id: int
+    job_title: str
+    job_url: str
+    job_company: str
+    match_score: int
+    channels: dict
+    created_at: str
+
+
+class RSSFetchLogOut(BaseModel):
+    id: int
+    source_name: str
+    jobs_count: int
+    success: int
+    error_msg: str = ""
+    created_at: str
+
+
+class NotificationTestIn(BaseModel):
+    channel: str  # email / dingtalk / wecom / feishu
+
+
+class NotificationTestOut(BaseModel):
+    success: bool
+    channel: str
+    message: str

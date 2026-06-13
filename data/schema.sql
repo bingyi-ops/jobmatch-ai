@@ -15,7 +15,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     custom_source_url TEXT DEFAULT '',
     embedding_json TEXT DEFAULT '[]',
     application_deadline TEXT,
-    posted_at TEXT
+    posted_at TEXT,
+    quality_score INTEGER DEFAULT 0,
+    quality_flags TEXT DEFAULT '[]',
+    user_key TEXT DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS match_records (
@@ -29,6 +32,7 @@ CREATE TABLE IF NOT EXISTS match_records (
     is_filtered INTEGER DEFAULT 0,
     filter_reason TEXT,
     created_at TEXT,
+    user_key TEXT DEFAULT 'default',
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 
@@ -39,7 +43,8 @@ CREATE TABLE IF NOT EXISTS resume (
     deal_breakers TEXT,
     embedding_json TEXT DEFAULT '[]',
     raw_parsed TEXT,
-    created_at TEXT
+    created_at TEXT,
+    user_key TEXT DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS feedback (
@@ -48,6 +53,7 @@ CREATE TABLE IF NOT EXISTS feedback (
     action TEXT,
     ignore_reason TEXT,
     created_at TEXT,
+    user_key TEXT DEFAULT 'default',
     FOREIGN KEY (match_record_id) REFERENCES match_records(id)
 );
 
@@ -59,6 +65,7 @@ CREATE TABLE IF NOT EXISTS applications (
     notes TEXT DEFAULT '{}',
     applied_at TEXT,
     updated_at TEXT,
+    user_key TEXT DEFAULT 'default',
     FOREIGN KEY (job_id) REFERENCES jobs(id),
     FOREIGN KEY (match_record_id) REFERENCES match_records(id)
 );
@@ -73,7 +80,8 @@ CREATE TABLE IF NOT EXISTS resume_versions (
     improvement_notes TEXT,
     based_on_feedback INTEGER,
     gap_analysis_result TEXT,
-    created_at TEXT
+    created_at TEXT,
+    user_key TEXT DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS interview_reviews (
@@ -88,5 +96,57 @@ CREATE TABLE IF NOT EXISTS interview_reviews (
     improvement_advices TEXT,
     strengths TEXT,
     weaknesses TEXT,
+    created_at TEXT,
+    user_key TEXT DEFAULT 'default'
+);
+
+-- ── 用户设置表 ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_settings (
+    id INTEGER PRIMARY KEY,
+    preferences TEXT DEFAULT '{}',
+    updated_at TEXT,
+    user_key TEXT DEFAULT 'default'
+);
+
+-- ── RSS 通知记录表 ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS notification_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_title TEXT,
+    job_url TEXT,
+    job_company TEXT,
+    match_score INTEGER DEFAULT 0,
+    channels TEXT DEFAULT '{}',
+    created_at TEXT
+);
+
+-- ── RSS 拉取日志表 ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS rss_fetch_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_name TEXT,
+    jobs_count INTEGER DEFAULT 0,
+    success INTEGER DEFAULT 1,
+    error_msg TEXT,
+    created_at TEXT
+);
+
+-- ── 订阅表 ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    companies TEXT DEFAULT '[]',
+    industries TEXT DEFAULT '[]',
+    cities TEXT DEFAULT '[]',
+    keywords TEXT DEFAULT '[]',
+    channels TEXT DEFAULT '{}',
+    updated_at TEXT,
+    user_key TEXT DEFAULT 'default'
+);
+
+-- ── 用户反馈表（bug / feature request，全局可见）──────────
+CREATE TABLE IF NOT EXISTS user_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feedback_type TEXT NOT NULL CHECK(feedback_type IN ('bug', 'feature')),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    contact TEXT DEFAULT '',
     created_at TEXT
 );

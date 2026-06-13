@@ -1,0 +1,13 @@
+
+> jobmatch-ai@1.0.0 build
+> tsc -b && vite build
+
+src/components/SkillsRadarCompare.tsx(37,18): error TS2365: Operator '>' cannot be applied to types 'string | number' and 'number'.
+src/components/SkillsRadarCompare.tsx(37,38): error TS2365: Operator '>' cannot be applied to types 'string | number' and 'number'.
+src/pages/ResumePage.tsx(142,18): error TS2345: Argument of type '(prev: ResumeProfile | null) => { interest_profile: { preferred_industries: string[]; preferred_roles: never[]; work_style?: string[] | undefined; }; has_resume: boolean; ability_profile?: { ...; } | undefined; deal_breakers?: string[] | undefined; } | null' is not assignable to parameter of type 'SetStateAction<ResumeProfile | null>'.
+  Type '(prev: ResumeProfile | null) => { interest_profile: { preferred_industries: string[]; preferred_roles: never[]; work_style?: string[] | undefined; }; has_resume: boolean; ability_profile?: { ...; } | undefined; deal_breakers?: string[] | undefined; } | null' is not assignable to type '(prevState: ResumeProfile | null) => ResumeProfile | null'.
+    Type '{ interest_profile: { preferred_industries: string[]; preferred_roles: never[]; work_style?: string[] | undefined; }; has_resume: boolean; ability_profile?: { skills: string[]; education: string; experience: string; projects: string[]; } | undefined; deal_breakers?: string[] | undefined; } | null' is not assignable to type 'ResumeProfile | null'.
+      Type '{ interest_profile: { preferred_industries: string[]; preferred_roles: never[]; work_style?: string[] | undefined; }; has_resume: boolean; ability_profile?: { skills: string[]; education: string; experience: string; projects: string[]; }; deal_breakers?: string[]; }' is not assignable to type 'ResumeProfile'.
+        The types of 'interest_profile.work_style' are incompatible between these types.
+          Type 'string[] | undefined' is not assignable to type 'string[]'.
+            Type 'undefined' is not assignable to type 'string[]'.
