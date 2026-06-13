@@ -2332,7 +2332,7 @@ if __name__ == "__main__":
         db.close()
         print("[Init] 40 mock jobs seeded and matched")
 
-    port = 8000
+    port = int(os.environ.get("PORT", 8000))
     server = ThreadingHTTPServer(("0.0.0.0", port), JobMatchHandler)
     print(f"\n[Server] JobMatch AI running at http://localhost:{port}")
     print(f"  Health:   http://localhost:{port}/api/health")
