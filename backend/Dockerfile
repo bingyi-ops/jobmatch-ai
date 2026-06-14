@@ -20,4 +20,5 @@ RUN mkdir -p /app/data /app/uploads
 
 EXPOSE 8000
 
-CMD ["python", "-c", "import uvicorn; uvicorn.run('app.main:app', host='0.0.0.0', port=8000)"]
+# 使用 server.py 作为启动入口（纯标准库，不依赖缺失的 FastAPI 模块）
+CMD ["python", "server.py"]
