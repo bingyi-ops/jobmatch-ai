@@ -574,141 +574,98 @@ def _score_role_match(job: dict, interest: dict) -> float:
 
 # ═══════════════════ 综合评分汇总 ═══════════════════
 
-def compute_match(job: dict, ability: dict, interest: dict, breakers: list,
-                  w1: int = 45, w2: int = 30, w3: int = 25) -> dict:
-    """完整评分流程：一票否决 → 12子指标打分 → 加权汇总 → 诊断建议
+# ═══════════════════ 综合评分汇总（两维度）═══════════════════
 
-    Args:
-        w1, w2, w3: 三维度权重（总和应为100）
-    Returns:
-        完整评分卡 dict（含子指标明细和诊断建议）
+def compute_match(job: dict, ability: dict, interest: dict, breakers: list,
+                  w1: int = 50, w2: int = 50) -> dict:
+    """两维度评分：我擅长(简历vsJD) + 我喜欢(偏好vs岗位)
+
+    我擅长(6指标): 学历层次 + 专业对口 + 技能匹配 + 经验年限 + 项目经验 + 稳定性
+    我喜欢(4指标): 城市 + 行业 + 薪资 + 岗位方向
     """
     # 0. 一票否决
     filtered, filter_reason = _check_deal_breakers(job, breakers)
     if filtered:
-        return {
-            "job_id": job["id"], "total_score": 0, "total_score_pct": 0,
-            "ability": {"total": 0, "subs": {}, "verdict": filter_reason},
-            "market":  {"total": 0, "subs": {}, "verdict": ""},
-            "interest":{"total": 0, "subs": {}, "verdict": ""},
-            "suggestion": "该岗位命中您的不可接受项（" + filter_reason + "），已自动过滤",
-            "is_filtered": True
-        }
+        return {"job_id": job["id"], "total_score": 0, "total_score_pct": 0,
+                "ability": {"total": 0, "subs": {}, "verdict": filter_reason},
+                "interest": {"total": 0, "subs": {}, "verdict": ""},
+                "suggestion": "该岗位命中不可接受项：" + filter_reason, "is_filtered": True}
 
-    # 1. 我擅长 (0-10)
-    a1 = _score_education_level(ability)
-    a2 = _score_skills_mastery(ability)
-    a3 = _score_project_experience(ability)
-    ability_total = round(a1 * 0.35 + a2 * 0.35 + a3 * 0.30, 1)
-    ability_verdict = _ability_verdict(ability_total, a1, a2, a3)
+    # 1. 我擅长 — 简历 vs JD要求 (6指标, 每个0-10分)
+    a1 = _score_education_level(ability)       # 学历层次
+    a2 = _score_major_match(job, ability)       # 专业对口
+    a3 = _score_skills_mastery(ability)         # 技能匹配
+    a4 = _score_exp_years_match(job, ability)   # 经验年限
+    a5 = _score_project_experience(ability)     # 项目经验
+    a6 = _score_work_stability(ability)         # 工作稳定性
+    ability_total = round((a1 + a2 + a3*1.2 + a4 + a5 + a6) / 6.2, 1)  # 技能权重1.2倍
+    ability_subs = {"education": a1, "major": a2, "skills": a3, "experience": a4, "projects": a5, "stability": a6}
+    ability_verdict = _ability2_verdict(ability_total, ability_subs, job)
 
-    # 2. 公司需要 (0-10)
-    b1 = _score_edu_requirement(job, ability)
-    b2 = _score_major_match(job, ability)
-    b3 = _score_exp_years_match(job, ability)
-    b4 = _score_duty_coverage(job, ability)
-    b5 = _score_work_stability(ability)
-    market_total = round(b1 * 0.20 + b2 * 0.20 + b3 * 0.20 + b4 * 0.25 + b5 * 0.15, 1)
-    market_verdict = _market_verdict(market_total, b1, b2, b3, b4, b5)
+    # 2. 我喜欢 — 偏好 vs 岗位条件 (4指标, 每个0-10分)
+    b1 = _score_city_match(job, interest)
+    b2 = _score_industry_match(job, interest)
+    b3 = _score_salary_match(job, interest)
+    b4 = _score_role_match(job, interest)
+    interest_total = round(b1 * 0.25 + b2 * 0.25 + b3 * 0.20 + b4 * 0.30, 1)
+    interest_subs = {"city": b1, "industry": b2, "salary": b3, "role": b4}
+    interest_verdict = _interest2_verdict(interest_total, interest_subs)
 
-    # 3. 我喜欢 (0-10)
-    c1 = _score_city_match(job, interest)
-    c2 = _score_industry_match(job, interest)
-    c3 = _score_salary_match(job, interest)
-    c4 = _score_role_match(job, interest)
-    interest_total = round(c1 * 0.25 + c2 * 0.25 + c3 * 0.20 + c4 * 0.30, 1)
-    interest_verdict = _interest_verdict(interest_total, c1, c2, c3, c4)
-
-    # 4. 综合加权
-    total = round(ability_total * w1 / 100 + market_total * w2 / 100 + interest_total * w3 / 100, 1)
+    # 3. 综合加权
+    total = round(ability_total * w1 / 100 + interest_total * w2 / 100, 1)
     total_pct = round(total * 10)
-    suggestion = _generate_suggestion(ability_total, market_total, interest_total, total)
+    suggestion = _generate_suggestion2(ability_total, interest_total, total)
 
-    return {
-        "job_id": job["id"],
-        "total_score": total,
-        "total_score_pct": total_pct,
-        "ability": {
-            "total": ability_total,
-            "subs": {"education": a1, "skills": a2, "projects": a3},
-            "verdict": ability_verdict
-        },
-        "market": {
-            "total": market_total,
-            "subs": {"edu_req": b1, "major_match": b2, "exp_years": b3, "duty_coverage": b4, "stability": b5},
-            "verdict": market_verdict
-        },
-        "interest": {
-            "total": interest_total,
-            "subs": {"city": c1, "industry": c2, "salary": c3, "role": c4},
-            "verdict": interest_verdict
-        },
-        "suggestion": suggestion,
-        "is_filtered": False
-    }
+    return {"job_id": job["id"], "total_score": total, "total_score_pct": total_pct,
+            "ability": {"total": ability_total, "subs": ability_subs, "verdict": ability_verdict},
+            "interest": {"total": interest_total, "subs": interest_subs, "verdict": interest_verdict},
+            "suggestion": suggestion, "is_filtered": False}
 
-def _ability_verdict(total, a1, a2, a3):
+def _ability2_verdict(total, subs, job):
     parts = []
-    edu_map = {10:"博士", 8:"硕士", 6:"本科", 4:"大专", 2:"其他"}
-    parts.append(f"学历{edu_map.get(a1,'未知')}({a1}/10)")
-    parts.append(f"技能{a2}/10分")
-    parts.append(f"项目经验{a3}/10分")
-    if total >= 8: parts.append("→ 硬实力优秀")
-    elif total >= 5: parts.append("→ 硬实力中等")
-    else: parts.append("→ 硬实力需提升")
+    if subs["education"] >= 8: parts.append("学历优秀")
+    elif subs["education"] < 5: parts.append("学历偏低")
+    if subs["major"] >= 8: parts.append("专业对口")
+    elif subs["major"] < 5: parts.append(f"专业不完全匹配(JD偏好:{_infer_jd_major_req(job['jd_text'] or '') or '不限'})")
+    if subs["skills"] >= 7: parts.append("技能高度匹配")
+    elif subs["skills"] < 4: parts.append("技能差距较大")
+    if subs["experience"] >= 8: parts.append("经验充足")
+    elif subs["experience"] < 5: parts.append(f"经验不足(JD要求约{_infer_jd_exp_years(job['jd_text'] or '') or '?'}年)")
+    if subs["stability"] >= 8: parts.append("履历稳定")
+    if not parts: parts.append("各方面均达标")
+    if total >= 8: parts.append("→ 非常胜任")
+    elif total >= 5: parts.append("→ 基本胜任")
+    else: parts.append("→ 有差距需提升")
     return "，".join(parts)
 
-def _market_verdict(total, b1, b2, b3, b4, b5):
+def _interest2_verdict(total, subs):
     parts = []
-    if b1 < 6: parts.append("学历略低于JD要求")
-    if b2 < 6: parts.append("专业不完全对口")
-    if b3 < 6: parts.append("经验年限略低于JD要求")
-    if b4 < 5: parts.append("岗位职责覆盖不足")
-    if b5 >= 8: parts.append("工作稳定性良好")
-    if not parts: parts.append("各方面均满足JD要求")
-    if total >= 8: parts.append("→ 高度匹配")
-    elif total >= 5: parts.append("→ 中等匹配")
-    else: parts.append("→ 差距较大")
+    if subs["city"] >= 9: parts.append("城市首选")
+    elif subs["city"] >= 7: parts.append("城市可接受")
+    elif subs["city"] < 4: parts.append("城市不匹配")
+    if subs["industry"] >= 9: parts.append("行业命中")
+    elif subs["industry"] >= 7: parts.append("行业相关")
+    if subs["salary"] >= 8: parts.append("薪资满意")
+    elif subs["salary"] >= 5: parts.append("薪资可接受")
+    else: parts.append("薪资偏低")
+    if subs["role"] >= 9: parts.append("岗位精准命中")
+    elif subs["role"] >= 7: parts.append("岗位方向相关")
+    if not parts: parts.append("无特别偏好")
+    if total >= 8: parts.append("→ 非常想去")
+    elif total >= 5: parts.append("→ 可以考虑")
+    else: parts.append("→ 意愿不强")
     return "，".join(parts)
 
-def _interest_verdict(total, c1, c2, c3, c4):
-    parts = []
-    if c1 >= 10: parts.append("城市首选")
-    elif c1 >= 7: parts.append("城市可接受")
-    if c2 >= 10: parts.append("行业精确匹配")
-    elif c2 >= 7: parts.append("行业相关")
-    if c3 >= 10: parts.append("薪资超出预期")
-    elif c3 >= 8: parts.append("薪资符合预期")
-    if c4 >= 10: parts.append("岗位精确命中")
-    elif c4 >= 7: parts.append("岗位方向相关")
-    if not parts: parts.append("偏好匹配度一般")
-    if total >= 8: parts.append("→ 高度契合")
-    elif total >= 5: parts.append("→ 基本满意")
-    else: parts.append("→ 需放宽偏好")
-    return "，".join(parts)
-
-def _generate_suggestion(ability, market, interest, total):
+def _generate_suggestion2(ability, interest, total):
     tips = []
-    if total >= 8.0:
-        tips.append("综合匹配度优秀，建议优先投递并认真准备面试")
-    elif total >= 6.5:
-        tips.append("综合匹配度良好，可投递，针对弱项做面试准备")
-    elif total >= 5.0:
-        tips.append("综合匹配度尚可，建议优化简历后投递")
-    else:
-        tips.append("综合匹配度偏低，建议提升相关技能或拓宽岗位选择范围")
-
-    # 找最弱维度给具体建议
-    scores = [("硬实力", ability), ("JD匹配", market), ("偏好契合", interest)]
-    scores.sort(key=lambda x: x[1])
-    weakest = scores[0]
-    if weakest[1] < 5:
-        if weakest[0] == "硬实力":
-            tips.append(f"短板在「我擅长」({ability}/10)：建议补充相关技能、积累项目经验")
-        elif weakest[0] == "JD匹配":
-            tips.append(f"短板在「公司需要」({market}/10)：建议筛选学历/经验要求更匹配的岗位")
-        else:
-            tips.append(f"短板在「我喜欢」({interest}/10)：建议拓宽行业/城市/岗位选择范围")
+    if total >= 8.0: tips.append("强烈推荐投递，能力匹配且意愿契合")
+    elif total >= 6.5: tips.append("推荐投递，整体匹配度良好")
+    elif total >= 5.0: tips.append("可关注，部分维度有提升空间")
+    else: tips.append("匹配度偏低，建议提升技能或调整偏好")
+    if ability < interest:
+        tips.append(f"短板在「我擅长」({ability}/10)：建议补充JD要求的技能或经验")
+    elif interest < ability:
+        tips.append(f"短板在「我喜欢」({interest}/10)：当前岗位条件与你的偏好有差距，可调整期望")
     return "。".join(tips)
 
 # ═══════════════════ 匹配执行 ═══════════════════
