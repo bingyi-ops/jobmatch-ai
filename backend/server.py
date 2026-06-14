@@ -2058,39 +2058,26 @@ JD技能：{', '.join(jd_skills[:8])}
             matched = [s for s in jd_skills if any(us in s.lower() or s.lower() in us for us in user_skills)]
             missing = [s for s in jd_skills if s not in matched]
 
-            # LLM 生成个性化建议
+            # 基础建议（秒返，不调LLM）
+            advices = [{"type":"summary","title":"匹配概览","content":f"匹配{len(matched)}/{len(jd_skills)}项技能，缺失{len(missing)}项"}]
+            if missing: advices.append({"type":"gap","title":"需补充技能","content":f"建议补充：{', '.join(missing[:5])}"})
+            if matched: advices.append({"type":"strength","title":"已有优势","content":f"你的{', '.join(matched[:5])}与JD匹配"})
+
+            # LLM 增强（仅在前端传 use_ai=true 时触发）
+            use_ai = body.get("use_ai", False)
             llm_advice = None
-            try:
-                prompt = f"""你是资深职业顾问。根据以下信息，给出3-5条具体的简历修改建议，每条包含【问题】【具体修改方案】【示例写法】。
-
-【候选人信息】
-技能：{', '.join(ability.get('skills',[]))}
-学历：{ability.get('education','未知')}
-经验：{ability.get('experience','未知')}
-项目：{', '.join(ability.get('projects',[]))}
-意向岗位：{', '.join(interest.get('preferred_roles',[]))}
-
-【目标岗位】
-标题：{job['title']}
-公司：{job['company']}
-JD技能要求：{', '.join(jd_skills)}
-JD描述：{(job['jd_text'] or '')[:600]}
-已匹配技能：{', '.join(matched) if matched else '无'}
-缺失技能：{', '.join(missing) if missing else '全部覆盖'}
-
-请用中文，每条建议格式为：1.【问题】xxx 【方案】xxx 【示例】xxx。共300字左右。"""
-                llm_advice = asyncio.run(llm.chat([{"role":"user","content":prompt}], temperature=0.7, max_tokens=500))
-            except: pass
-
-            advices = []
-            if llm_advice:
-                # 解析 LLM 返回的编号建议
-                for line in llm_advice.strip().split('\n'):
-                    line = line.strip()
-                    if line and (line[0].isdigit() or line.startswith('【') or line.startswith('-')):
-                        advices.append({"type": "llm", "title": "个性化建议", "content": line})
-            if not advices:
-                advices = [{"type": "gap", "title": "技能差距", "content": f"匹配{len(matched)}项，缺失{len(missing)}项：{', '.join(missing[:5])}"}]
+            if use_ai:
+                try:
+                    prompt = f"""你是职业顾问。分析候选人与岗位差距，给3条简历修改建议。每条含【问题】【方案】【示例】。
+候选人：技能{', '.join(user_skills[:8])}，学历{ability.get('education','')}，经验{ability.get('experience','')}
+岗位：{job['title']}@{job['company']}，JD技能{', '.join(jd_skills[:8])}，摘要{(job['jd_text'] or '')[:300]}
+缺口：{', '.join(missing[:5]) if missing else '无'}。200字。"""
+                    llm_advice = asyncio.run(llm.chat([{"role":"user","content":prompt}], temperature=0.7, max_tokens=300))
+                except: pass
+                if llm_advice:
+                    for line in llm_advice.strip().split('\n'):
+                        line = line.strip()
+                        if len(line) > 10: advices.append({"type":"ai","title":"AI建议","content":line})
 
             return self.json_response({
                 "job_title": job["title"], "job_company": job["company"],
