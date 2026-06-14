@@ -1298,41 +1298,28 @@ class JobMatchHandler(BaseHTTPRequestHandler):
             jd_skills = json.loads(job["jd_skills"]) if job and isinstance(job["jd_skills"], str) else (job["jd_skills"] or [])
             missing_skills = [s for s in (jd_skills or []) if not any(us.lower() in s.lower() or s.lower() in us.lower() for us in user_skills)]
 
-            # LLM 生成个性化面试题
-            questions = []
-            try:
-                prompt = f"""你是资深面试官。根据以下信息生成5道个性化面试题，针对候选人的技能缺口和岗位要求设计。
+            # 基础面试题（秒返，不调LLM）
+            questions = [
+                {"id":1,"question":f"请做一个自我介绍，重点突出与{job['title'] if job else '该岗位'}相关的经历和技能。"},
+                {"id":2,"question":f"根据JD要求（{', '.join(jd_skills[:4]) if jd_skills else '见岗位描述'}），你认为自己最匹配的优势是什么？最大的不足是什么？"},
+                {"id":3,"question":"请描述一个你通过快速学习解决技术难题的具体经历。"},
+                {"id":4,"question":f"{'你了解'+job['company']+'吗' if job and job['company'] else '对我们公司'}？为什么想加入？"},
+                {"id":5,"question":"如果入职后发现实际工作与JD描述有较大差距，你会怎么处理？"},
+            ]
 
-【候选人】
-技能：{', '.join(user_skills) if user_skills else '未知'}
-学历：{ability.get('education','未知')}
-经验：{ability.get('experience','未知')}
-项目：{', '.join(projects) if projects else '无'}
-技能缺口：{', '.join(missing_skills[:5]) if missing_skills else '无明显缺口'}
-
-【岗位】
-标题：{job['title'] if job else '未知'}
-公司：{job['company'] if job else '未知'}
-JD摘要：{jd_text[:800]}
-JD技能：{', '.join(jd_skills[:8])}
-
-要求：5道题混合技术+行为+情景。针对候选人技能缺口设计追问。每行格式：1. 【题型】题目内容。不超过300字。"""
-                llm_result = asyncio.run(llm.chat([{"role":"user","content":prompt}], temperature=0.8, max_tokens=600))
-                if llm_result:
-                    for i, line in enumerate(llm_result.strip().split('\n')):
-                        line = line.strip()
-                        if line and len(line) > 10:
-                            questions.append({"id": i+1, "question": line})
-            except: pass
-
-            if len(questions) < 3:
-                questions = [
-                    {"id": 1, "question": f"请做一个自我介绍，重点突出与{job['title'] if job else '该岗位'}相关的经历。"},
-                    {"id": 2, "question": f"根据JD要求，你认为自己最大的优势是什么？最大的不足是什么？"},
-                    {"id": 3, "question": "描述一个你通过快速学习解决技术难题的经历。"},
-                    {"id": 4, "question": "如果入职后发现实际工作与JD描述有差距，你会怎么做？"},
-                    {"id": 5, "question": f"你为什么选择{job['company'] if job else '我们公司'}？对这个行业有什么看法？"},
-                ]
+            # LLM 生成个性化面试题（仅在前端传 use_ai=true 时触发）
+            use_ai = body.get("use_ai", False)
+            if use_ai:
+                try:
+                    prompt = f"""你是面试官。根据以下信息生成5道个性化面试题，针对候选人技能缺口。
+候选人：技能{', '.join(user_skills[:8])}，学历{ability.get('education','')}，经验{ability.get('experience','')}
+岗位：{job['title'] if job else ''}@{job['company'] if job else ''}，JD摘要{jd_text[:400]}，JD技能{', '.join(jd_skills[:6])}
+缺口：{', '.join(missing_skills[:4]) if missing_skills else '无'}。5道混合题型，每行1道，200字。"""
+                    llm_result = asyncio.run(llm.chat([{"role":"user","content":prompt}], temperature=0.8, max_tokens=400))
+                    if llm_result:
+                        ai_qs = [{"id":i+1,"question":l.strip()} for i,l in enumerate(llm_result.strip().split('\n')) if len(l.strip())>10]
+                        if len(ai_qs) >= 3: questions = ai_qs
+                except: pass
 
             return self.json_response({
                 "session_id": random.randint(1000, 9999),
@@ -1340,7 +1327,7 @@ JD技能：{', '.join(jd_skills[:8])}
                 "job_company": job["company"] if job else "",
                 "questions": questions[:5],
                 "total_questions": len(questions[:5]),
-                "llm_generated": len(questions) >= 3,
+                "llm_generated": bool(body.get("use_ai")),
             })
 
         if path == "/api/interview/evaluate" and method == "POST":
