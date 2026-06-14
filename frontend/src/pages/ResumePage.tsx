@@ -93,6 +93,10 @@ export default function ResumePage() {
   const [localRoles, setLocalRoles] = useState<string[]>([])
   const [localSalaryMin, setLocalSalaryMin] = useState<number>(0)
 
+  // ── 子维度权重（默认值从后端同步）──
+  const [localDimWeights, setLocalDimWeights] = useState<Record<string,number>>({})
+  const [showWeightsEditor, setShowWeightsEditor] = useState(false)
+
   // ── 不可接受项 ──
   const [editingBreakers, setEditingBreakers] = useState(false)
   const [savingBreakers, setSavingBreakers] = useState(false)

@@ -11,11 +11,99 @@ import { Star, Sparkles, Upload, TrendingUp, AlertCircle, SlidersHorizontal, Che
 const INDUSTRIES = ['', '互联网', '制造业', '金融', '教育', '医疗', '咨询', '快消']
 const CITIES = ['', '北京', '上海', '广州', '深圳', '杭州', '成都', '武汉', '南京']
 
-function loadWeights() {
-  try { const raw = localStorage.getItem('jm_weights'); if (raw) { const w = JSON.parse(raw); return { w1: w.w1 ?? 50, w2: w.w2 ?? 50, threshold: w.threshold ?? 60 } } } catch {}
-  return { w1: 50, w2: 50, threshold: 60 }
+function ScoringStandards() {
+  const [open, setOpen] = useState(false)
+  const STANDARD = [
+    {dim:'skills',label:'技能匹配',target:'ability',icon:'💡'},{dim:'projects',label:'项目经验',target:'ability',icon:'🔨'},{dim:'education',label:'学历层次',target:'ability',icon:'🎓'},
+    {dim:'edu_req',label:'学历达标',target:'market',icon:'📋'},{dim:'major_match',label:'专业对口',target:'market',icon:'📚'},{dim:'exp_years',label:'经验年限',target:'market',icon:'⏳'},
+    {dim:'duty_coverage',label:'职责覆盖',target:'market',icon:'📝'},{dim:'stability',label:'工作稳定',target:'market',icon:'🔒'},
+    {dim:'city',label:'城市匹配',target:'interest',icon:'🏙️'},{dim:'industry',label:'行业匹配',target:'interest',icon:'🏭'},{dim:'salary',label:'薪资匹配',target:'interest',icon:'💰'},{dim:'role',label:'岗位方向',target:'interest',icon:'🎯'},
+  ]
+  const TARGET_COLORS:Record<string,string> = {ability:'#10B981',market:'#F59E0B',interest:'#3B82F6'}
+  const TARGET_NAMES:Record<string,string> = {ability:'我擅长',market:'公司需要',interest:'我喜欢'}
+  const [disabled, setDisabled] = useState<Set<string>>(new Set())
+  const [customs, setCustoms] = useState<any[]>([])
+  const [showAdd, setShowAdd] = useState(false); const [newName, setNewName] = useState(''); const [newKW, setNewKW] = useState(''); const [newTarget, setNewTarget] = useState('ability')
+
+  const load = () => {
+    api.getResumeProfile().then(p => {
+      const a=p.ability_profile; const i=p.interest_profile
+      setCustoms([...(a?.custom_dims||[]).map((d:any)=>({...d,target:'ability'})),...(i?.custom_dims||[]).map((d:any)=>({...d,target:'interest'}))])
+      setDisabled(new Set([...(a?.dim_disabled||[]),...(i?.dim_disabled||[])]))
+    }).catch(()=>{})
+  }
+  useEffect(()=>{load()},[])
+
+  const toggleDim = async (name:string, t:string) => { await api.toggleDim(name, t); load() }
+  const delCustom = async (name:string, t:string) => { await api.removeCustomDim(name, t); load() }
+  const addCustom = async () => {
+    if(!newName.trim()||!newKW.trim()) return
+    const kw=newKW.split(/[,，]/).map((s:string)=>s.trim()).filter(Boolean)
+    if(newTarget==='interest') await api.updateInterestProfile({custom_dims:[{name:newName.trim(),keywords:kw}]} as any)
+    else await api.updateAbilityProfile({custom_dims:[{name:newName.trim(),keywords:kw}]} as any)
+    setShowAdd(false); setNewName(''); setNewKW(''); load()
+  }
+
+  return (
+    <div className="bg-[#1E293B]/40 border border-white/5 rounded-xl overflow-hidden mb-3">
+      <button onClick={()=>setOpen(!open)} className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-gray-400 hover:text-gray-200 transition-colors">
+        <span className="flex items-center gap-2"><SlidersHorizontal className="w-3.5 h-3.5"/>评分标准 · {12+customs.length}项{customs.length>0?`（${customs.length}自定义）`:'' }</span>
+        {open?<ChevronUp className="w-3.5 h-3.5"/>:<ChevronDown className="w-3.5 h-3.5"/>}
+      </button>
+      {open&&(
+        <div className="px-4 pb-4 space-y-4 border-t border-white/5 pt-3">
+          {['ability','market','interest'].map(target=>{
+            const items=[...STANDARD.filter(d=>d.target===target),...customs.filter(c=>c.target===target)]
+            const color=TARGET_COLORS[target]
+            return <div key={target}>
+              <div className="text-[11px] font-semibold mb-2 flex items-center gap-2" style={{color}}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{backgroundColor:color}}/>
+                {TARGET_NAMES[target]}
+                <span className="font-normal text-gray-600 text-[10px]">{target==='ability'?'简历 vs JD · 我能胜任吗':target==='market'?'公司角度 · 会录用我吗':'偏好 vs 岗位 · 我想去吗'}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {items.map(item=>{
+                  const isDisabled=disabled.has(item.dim||item.name)
+                  return <span key={item.dim||item.name} title={isDisabled?'已禁用，点击启用':item.name}
+                    onClick={() => item.dim ? toggleDim(item.dim, target) : delCustom(item.name, target)}
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] cursor-pointer transition-all border
+                      ${isDisabled ? 'bg-transparent text-gray-700 border-gray-800 line-through' :
+                        item.dim ? 'bg-white/5 text-gray-300 border-white/10 hover:border-white/20 hover:bg-white/10' :
+                        'bg-[#10B981]/10 text-[#10B981] border-[#10B981]/20 hover:border-[#10B981]/40'}`}>
+                    {(item as any).icon||'⭐'} {item.label||item.name}
+                    {isDisabled&&<span className="text-[8px] text-gray-700">禁用</span>}
+                    {!item.dim&&<button onClick={e=>{e.stopPropagation();delCustom(item.name,target)}} className="text-red-500/30 hover:text-red-400 ml-0.5">×</button>}
+                  </span>
+                })}
+              </div>
+            </div>
+          })}
+          {!showAdd?(
+            <button onClick={()=>setShowAdd(true)} className="text-[10px] text-[#10B981]/60 hover:text-[#10B981] border border-dashed border-white/10 rounded-lg px-3 py-1.5 w-full text-center transition-colors">
+              + 添加自定义评分项
+            </button>
+          ):(
+            <div className="flex gap-2 items-center bg-[#0B1120] rounded-lg p-2">
+              <select value={newTarget} onChange={e=>setNewTarget(e.target.value)} className="bg-black/20 border border-white/10 rounded px-2 py-1.5 text-[10px] text-white w-20 flex-shrink-0">
+                <option value="ability">我擅长</option><option value="market">公司需要</option><option value="interest">我喜欢</option>
+              </select>
+              <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="名称" className="flex-1 bg-black/20 border border-white/10 rounded px-2 py-1.5 text-[10px] text-white placeholder:text-gray-600"/>
+              <input value={newKW} onChange={e=>setNewKW(e.target.value)} placeholder="关键词(逗号分隔)" className="flex-1 bg-black/20 border border-white/10 rounded px-2 py-1.5 text-[10px] text-white placeholder:text-gray-600"/>
+              <button onClick={addCustom} className="text-[10px] px-3 py-1.5 bg-[#10B981] hover:bg-[#059669] text-white rounded font-medium transition-colors flex-shrink-0">保存</button>
+            </div>
+          )}
+          <p className="text-[9px] text-gray-600 leading-relaxed">点击维度可<span className="text-gray-400">禁用/启用</span>，自定义维度可<span className="text-red-400">删除</span>。禁用后该维度不参与评分。配置对所有岗位生效。</p>
+        </div>
+      )}
+    </div>
+  )
 }
-function saveWeights(w: { w1: number; w2: number; threshold: number }) { localStorage.setItem('jm_weights', JSON.stringify(w)) }
+
+function loadWeights() {
+  try { const raw = localStorage.getItem('jm_weights'); if (raw) { const w = JSON.parse(raw); return { w1: w.w1 ?? 40, w2: w.w2 ?? 30, w3: w.w3 ?? 30, threshold: w.threshold ?? 60 } } } catch {}
+  return { w1: 40, w2: 30, w3: 30, threshold: 60 }
+}
+function saveWeights(w: object) { localStorage.setItem('jm_weights', JSON.stringify(w)) }
 
 export default function FeaturedPage() {
   const [jobs, setJobs] = useState<JobCard[]>([])
@@ -34,7 +122,8 @@ export default function FeaturedPage() {
   // 权重配置 (localStorage 持久化) — 阈值也从这里取，统一管理
   const [weights, setWeights] = useState(loadWeights)
   const [showWeights, setShowWeights] = useState(false)
-  const setW1 = (v: number) => { const w2 = 100 - v; const w = { ...weights, w1: v, w2 }; setWeights(w); saveWeights(w) }
+  const setW1 = (v: number) => { const remain = 100 - v; const w2n = Math.min(remain, weights.w2); const w = { ...weights, w1: v, w2: w2n, w3: 100 - v - w2n }; setWeights(w); saveWeights(w) }
+  const setW2 = (v: number) => { const remain = 100 - v; const w1n = Math.min(remain, weights.w1); const w = { ...weights, w2: v, w1: w1n, w3: 100 - v - w1n }; setWeights(w); saveWeights(w) }
   const setThreshold = (v: number) => { const w = { ...weights, threshold: v }; setWeights(w); saveWeights(w) }
 
   useEffect(() => {
@@ -60,7 +149,7 @@ export default function FeaturedPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await api.getFeatured({ page: p, page_size: 10, min_score: weights.threshold, type, industry, city, w1: weights.w1, w2: weights.w2 })
+      const data = await api.getFeatured({ page: p, page_size: 10, min_score: weights.threshold, type, industry, city, w1: weights.w1, w2: weights.w2, w3: weights.w3 })
       setJobs(data.items)
       setTotal(data.total)
       setTodayNew(data.today_new)
@@ -136,25 +225,21 @@ export default function FeaturedPage() {
         <div className="bg-[#1E293B]/40 border border-white/5 rounded-xl mb-4 overflow-hidden">
           <button onClick={() => setShowWeights(!showWeights)}
             className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">
-            <span className="flex items-center gap-2"><SlidersHorizontal className="w-4 h-4" />调分配置 · 我擅长{weights.w1}% 我喜欢{weights.w2}% · 阈值{weights.threshold}分</span>
+            <span className="flex items-center gap-2"><SlidersHorizontal className="w-4 h-4" />权重 · 我擅长{weights.w1}% 公司需要{weights.w2}% 我喜欢{weights.w3}%</span>
             {showWeights ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
           {showWeights && (
             <div className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3">
-              <div className="grid grid-cols-2 gap-6 text-xs">
-                <div>
-                  <div className="flex justify-between text-gray-400 mb-1"><span>我擅长</span><span className="text-green-400 font-bold">{weights.w1}%</span></div>
-                  <input type="range" min={10} max={90} value={weights.w1} onChange={e => setW1(Number(e.target.value))}
-                    className="w-full accent-green-500 h-1.5" />
-                  <span className="text-[10px] text-gray-600">简历 vs JD要求</span>
-                </div>
-                <div>
-                  <div className="flex justify-between text-gray-400 mb-1"><span>我喜欢</span><span className="text-blue-400 font-bold">{weights.w2}%</span></div>
-                  <input type="range" min={10} max={90} value={weights.w2} onChange={e => {
-                    const v = Number(e.target.value); setW1(100 - v)
-                  }} className="w-full accent-blue-500 h-1.5" />
-                  <span className="text-[10px] text-gray-600">偏好 vs 岗位条件</span>
-                </div>
+              <div className="grid grid-cols-3 gap-4 text-xs">
+                <div><div className="flex justify-between text-gray-400 mb-1"><span>我擅长</span><span className="text-green-400 font-bold">{weights.w1}%</span></div>
+                  <input type="range" min={10} max={70} value={weights.w1} onChange={e => setW1(Number(e.target.value))} className="w-full accent-green-500 h-1.5" />
+                  <span className="text-[10px] text-gray-600">自评：我能胜任吗</span></div>
+                <div><div className="flex justify-between text-gray-400 mb-1"><span>公司需要</span><span className="text-orange-400 font-bold">{weights.w2}%</span></div>
+                  <input type="range" min={10} max={70} value={weights.w2} onChange={e => setW2(Number(e.target.value))} className="w-full accent-orange-500 h-1.5" />
+                  <span className="text-[10px] text-gray-600">他评：公司会要我吗</span></div>
+                <div><div className="flex justify-between text-gray-400 mb-1"><span>我喜欢</span><span className="text-blue-400 font-bold">{weights.w3}%</span></div>
+                  <input type="range" min={10} max={70} value={weights.w3} onChange={e => { const v=Number(e.target.value); const w={...weights,w3:v,w1:Math.min(100-v,weights.w1)}; w.w2=100-w.w1-w.w3; setWeights(w);saveWeights(w) }} className="w-full accent-blue-500 h-1.5" />
+                  <span className="text-[10px] text-gray-600">偏好：我想去吗</span></div>
               </div>
               <div className="flex items-center gap-3 text-xs">
                 <span className="text-gray-400">精选阈值</span>
@@ -167,6 +252,9 @@ export default function FeaturedPage() {
             </div>
           )}
         </div>
+
+        {/* 评分标准配置（可折叠） */}
+        <ScoringStandards />
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3 mb-1 items-center">

@@ -239,6 +239,13 @@ export const api = {
   submitUserFeedback: (body: { type: string; title: string; description: string; contact?: string }) =>
     request<{ success: boolean; message: string }>('/user-feedback', { method: 'POST', body: JSON.stringify(body) }),
 
+  // 删除自定义维度
+  removeCustomDim: (dimName: string, target: string) =>
+    request<{ success: boolean }>('/resume/custom-dim', { method: 'DELETE', body: JSON.stringify({ name: dimName, target }) }),
+  // 启用/禁用维度
+  toggleDim: (dimName: string, target: string) =>
+    request<{ success: boolean }>('/resume/toggle-dim', { method: 'POST', body: JSON.stringify({ name: dimName, target }) }),
+
   // Health & Seed
   health: () => request<{ status: string }>('/health'),
   seed: () => request<any>('/seed', { method: 'POST' }),
