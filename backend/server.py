@@ -24,9 +24,24 @@ from app.resume_parser import parse_resume
 import cgi
 import io
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "jobmatch.db")
-SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "schema.sql")
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+_BASE = os.path.dirname(__file__)  # backend/
+DB_PATH = os.path.join(_BASE, "jobmatch.db")
+# 多路径尝试找到 schema.sql（兼容各种部署环境）
+_SCHEMA_CANDIDATES = [
+    os.path.join(_BASE, "..", "data", "schema.sql"),       # /app/data/schema.sql
+    os.path.join(_BASE, "data", "schema.sql"),              # /app/backend/data/schema.sql
+    os.path.join(os.path.dirname(_BASE), "data", "schema.sql"),  # 同上
+    "/app/data/schema.sql",
+    "/app/backend/data/schema.sql",
+]
+SCHEMA_PATH = None
+for _p in _SCHEMA_CANDIDATES:
+    if os.path.exists(_p):
+        SCHEMA_PATH = _p
+        break
+if SCHEMA_PATH is None:
+    SCHEMA_PATH = _SCHEMA_CANDIDATES[0]  # 兜底，后续 init_db 会报清晰错误
+UPLOAD_DIR = os.path.join(_BASE, "uploads")
 
 random.seed(42)
 
@@ -49,8 +64,16 @@ def get_db():
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     db = get_db()
+    if not os.path.exists(SCHEMA_PATH):
+        raise FileNotFoundError(
+            f"Schema file not found at any candidate path. "
+            f"Tried: {_SCHEMA_CANDIDATES}. "
+            f"Current dir: {os.getcwd()}, "
+            f"__file__: {__file__}"
+        )
     with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
         sql = f.read()
+    print(f"[DB] Loading schema from {SCHEMA_PATH} ({len(sql)} bytes)", flush=True)
     for stmt in sql.split(";"):
         stmt = stmt.strip()
         if stmt:
