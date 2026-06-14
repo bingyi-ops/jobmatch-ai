@@ -19,6 +19,7 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 from app.llm import parse_jd_text
+from app import llm
 from app.resume_parser import parse_resume
 import cgi
 import io
@@ -1279,41 +1280,95 @@ class JobMatchHandler(BaseHTTPRequestHandler):
         if path == "/api/interview/start" and method == "POST":
             body = self.read_body()
             job_id = body.get("job_id", 0)
+            user_key = self.get_user_key()
             db = get_db()
             job = db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            resume = db.execute("SELECT * FROM resume WHERE user_key = ? ORDER BY created_at DESC LIMIT 1", (user_key,)).fetchone()
             db.close()
-            jd = job["jd_text"] if job else ""
-            questions = [
-                {"id": 1, "question": f"请做一个简单的自我介绍，重点突出与{job['title'] if job else '该岗位'}相关的经历。"},
-                {"id": 2, "question": f"在{job['title'] if job else '该岗位'}的工作中，你如何处理压力和紧急任务？"},
-                {"id": 3, "question": "如果团队中有人不同意你的方案，你会怎么做？"},
-                {"id": 4, "question": "你如何保持自己在专业领域的持续学习和成长？"},
-                {"id": 5, "question": "你对我们公司和这个岗位有什么了解？为什么想来？"},
-            ]
+
+            # 收集用户画像和JD信息
+            ability = {}; interest = {}; user_skills = []; projects = []
+            if resume:
+                ability = json.loads(resume["ability_profile"]) if isinstance(resume["ability_profile"], str) else (resume["ability_profile"] or {})
+                interest = json.loads(resume["interest_profile"]) if isinstance(resume["interest_profile"], str) else (resume["interest_profile"] or {})
+                user_skills = ability.get("skills", [])
+                projects = ability.get("projects", [])
+
+            jd_text = (job["jd_text"] or "") if job else ""
+            jd_skills = json.loads(job["jd_skills"]) if job and isinstance(job["jd_skills"], str) else (job["jd_skills"] or [])
+            missing_skills = [s for s in (jd_skills or []) if not any(us.lower() in s.lower() or s.lower() in us.lower() for us in user_skills)]
+
+            # LLM 生成个性化面试题
+            questions = []
+            try:
+                prompt = f"""你是资深面试官。根据以下信息生成5道个性化面试题，针对候选人的技能缺口和岗位要求设计。
+
+【候选人】
+技能：{', '.join(user_skills) if user_skills else '未知'}
+学历：{ability.get('education','未知')}
+经验：{ability.get('experience','未知')}
+项目：{', '.join(projects) if projects else '无'}
+技能缺口：{', '.join(missing_skills[:5]) if missing_skills else '无明显缺口'}
+
+【岗位】
+标题：{job['title'] if job else '未知'}
+公司：{job['company'] if job else '未知'}
+JD摘要：{jd_text[:800]}
+JD技能：{', '.join(jd_skills[:8])}
+
+要求：5道题混合技术+行为+情景。针对候选人技能缺口设计追问。每行格式：1. 【题型】题目内容。不超过300字。"""
+                llm_result = asyncio.run(llm.chat([{"role":"user","content":prompt}], temperature=0.8, max_tokens=600))
+                if llm_result:
+                    for i, line in enumerate(llm_result.strip().split('\n')):
+                        line = line.strip()
+                        if line and len(line) > 10:
+                            questions.append({"id": i+1, "question": line})
+            except: pass
+
+            if len(questions) < 3:
+                questions = [
+                    {"id": 1, "question": f"请做一个自我介绍，重点突出与{job['title'] if job else '该岗位'}相关的经历。"},
+                    {"id": 2, "question": f"根据JD要求，你认为自己最大的优势是什么？最大的不足是什么？"},
+                    {"id": 3, "question": "描述一个你通过快速学习解决技术难题的经历。"},
+                    {"id": 4, "question": "如果入职后发现实际工作与JD描述有差距，你会怎么做？"},
+                    {"id": 5, "question": f"你为什么选择{job['company'] if job else '我们公司'}？对这个行业有什么看法？"},
+                ]
+
             return self.json_response({
                 "session_id": random.randint(1000, 9999),
                 "job_title": job["title"] if job else "未知岗位",
-                "questions": questions,
-                "total_questions": len(questions),
+                "job_company": job["company"] if job else "",
+                "questions": questions[:5],
+                "total_questions": len(questions[:5]),
+                "llm_generated": len(questions) >= 3,
             })
 
         if path == "/api/interview/evaluate" and method == "POST":
             body = self.read_body()
             answer = body.get("answer", "")
             qid = body.get("question_id", 0)
-            # Mock evaluation
-            score = random.randint(3, 5)
-            feedbacks = {
-                3: "回答结构清晰，但可以补充更多具体例子来增强说服力",
-                4: "很好的回答！建议加入量化成果，让面试官更直观地感受你的贡献",
-                5: "优秀！回答全面且有深度，展现了扎实的专业功底和沟通能力",
-            }
+            question = body.get("question", "")
+
+            feedback = "回答已记录"
+            score = 3
+            # LLM 评估
+            try:
+                if len(answer.strip()) > 20:
+                    prompt = f"""你是资深面试官。评估以下面试回答（1-5分），给出简短点评和改进建议。
+问题：{question[:200]}
+回答：{answer[:600]}
+返回格式：分数：X/5 | 点评：XXX | 建议：XXX。50字以内。"""
+                    llm_result = asyncio.run(llm.chat([{"role":"user","content":prompt}], temperature=0.3, max_tokens=200))
+                    if llm_result:
+                        feedback = llm_result.strip()
+                        # 尝试提取分数
+                        sm = re.search(r'(\d)/5', llm_result)
+                        if sm: score = int(sm.group(1))
+            except: pass
+
             return self.json_response({
-                "question_id": qid,
-                "score": score,
-                "max_score": 5,
-                "feedback": feedbacks[score],
-                "completed": qid >= 5,
+                "question_id": qid, "score": score, "max_score": 5,
+                "feedback": feedback, "completed": qid >= 5,
             })
 
         # ── Featured ──
@@ -1984,66 +2039,64 @@ class JobMatchHandler(BaseHTTPRequestHandler):
                 "message": f"成功导入 {imported} 个岗位，跳过 {skipped} 个",
             })
 
-        # ── Resume Advise ──
+        # ── Resume Advise（LLM个性化）──
         if path == "/api/resume/advise" and method == "POST":
             body = self.read_body()
             job_id = body.get("job_id", 0)
+            user_key = self.get_user_key()
             db = get_db()
             job = db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-            resume = db.execute("SELECT * FROM resume ORDER BY created_at DESC LIMIT 1").fetchone()
+            resume = db.execute("SELECT * FROM resume WHERE user_key = ? ORDER BY created_at DESC LIMIT 1", (user_key,)).fetchone()
             db.close()
 
-            if not resume:
-                return self.json_response({"error": "请先上传简历"}, 400)
+            if not resume: return self.json_response({"error": "请先上传简历"}, 400)
 
             ability = json.loads(resume["ability_profile"]) if isinstance(resume["ability_profile"], str) else resume["ability_profile"]
+            interest = json.loads(resume["interest_profile"]) if isinstance(resume["interest_profile"], str) else resume["interest_profile"] or {}
             jd_skills = json.loads(job["jd_skills"]) if isinstance(job["jd_skills"], str) else (job["jd_skills"] or [])
             user_skills = [s.lower() for s in (ability.get("skills") or [])]
-            jd_set = set(s.lower() for s in jd_skills)
-
-            # Gap analysis
-            matched = [s for s in jd_skills if any(us == s.lower() or s.lower() in us or us in s.lower() for us in user_skills)]
+            matched = [s for s in jd_skills if any(us in s.lower() or s.lower() in us for us in user_skills)]
             missing = [s for s in jd_skills if s not in matched]
 
-            # Generate advices
+            # LLM 生成个性化建议
+            llm_advice = None
+            try:
+                prompt = f"""你是资深职业顾问。根据以下信息，给出3-5条具体的简历修改建议，每条包含【问题】【具体修改方案】【示例写法】。
+
+【候选人信息】
+技能：{', '.join(ability.get('skills',[]))}
+学历：{ability.get('education','未知')}
+经验：{ability.get('experience','未知')}
+项目：{', '.join(ability.get('projects',[]))}
+意向岗位：{', '.join(interest.get('preferred_roles',[]))}
+
+【目标岗位】
+标题：{job['title']}
+公司：{job['company']}
+JD技能要求：{', '.join(jd_skills)}
+JD描述：{(job['jd_text'] or '')[:600]}
+已匹配技能：{', '.join(matched) if matched else '无'}
+缺失技能：{', '.join(missing) if missing else '全部覆盖'}
+
+请用中文，每条建议格式为：1.【问题】xxx 【方案】xxx 【示例】xxx。共300字左右。"""
+                llm_advice = asyncio.run(llm.chat([{"role":"user","content":prompt}], temperature=0.7, max_tokens=500))
+            except: pass
+
             advices = []
-            if matched:
-                advices.append({
-                    "type": "strength",
-                    "title": "已有匹配技能需突出",
-                    "content": f"你的{', '.join(matched)}等技能与岗位要求匹配，建议在简历中将这些技能放在显眼位置，并用具体项目数据佐证。",
-                    "skills": matched,
-                })
-            if missing:
-                advices.append({
-                    "type": "gap",
-                    "title": "技能差距需弥补或转化",
-                    "content": f"岗位要求但你的简历中未体现的技能：{', '.join(missing)}。建议：1) 如有相关学习经历，补充到简历中；2) 用相近技能进行替代表述；3) 短期内可以通过在线课程快速入门。",
-                    "skills": missing,
-                })
-            advices.append({
-                "type": "project",
-                "title": "项目经历优化建议",
-                "content": "用STAR法则重构项目描述，每个项目突出：业务背景→你的角色→技术方案→量化成果。确保至少有2个项目与岗位行业相关。",
-            })
-            advices.append({
-                "type": "keyword",
-                "title": "ATS关键词优化",
-                "content": f"确保简历JD中以下关键词自然出现：{', '.join(jd_skills[:5])}。避免堆砌，在每个项目经历中自然融入2-3个关键词。",
-            })
-            advices.append({
-                "type": "format",
-                "title": "简历版式与结构建议",
-                "content": "建议采用「个人信息→求职意向→核心技能→工作/项目经历→教育背景」的结构，一页A4为佳。使用量化数字（如'提升效率30%'）增强说服力。",
-            })
+            if llm_advice:
+                # 解析 LLM 返回的编号建议
+                for line in llm_advice.strip().split('\n'):
+                    line = line.strip()
+                    if line and (line[0].isdigit() or line.startswith('【') or line.startswith('-')):
+                        advices.append({"type": "llm", "title": "个性化建议", "content": line})
+            if not advices:
+                advices = [{"type": "gap", "title": "技能差距", "content": f"匹配{len(matched)}项，缺失{len(missing)}项：{', '.join(missing[:5])}"}]
 
             return self.json_response({
-                "job_title": job["title"],
-                "job_company": job["company"],
-                "matched_skills": matched,
-                "missing_skills": missing,
+                "job_title": job["title"], "job_company": job["company"],
+                "matched_skills": matched, "missing_skills": missing,
                 "match_rate": round(len(matched) / max(len(jd_skills), 1) * 100),
-                "advices": advices,
+                "advices": advices, "llm_generated": bool(llm_advice),
             })
 
         # ── Resume Generate ──
