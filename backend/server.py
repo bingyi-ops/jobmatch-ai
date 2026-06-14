@@ -2504,30 +2504,45 @@ JD摘要：{jd_text[:300]}
 
 
 if __name__ == "__main__":
-    # Init
-    init_db()
-    db = get_db()
-    job_count = db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-    db.close()
+    import traceback
+    import sys
 
-    if job_count == 0:
-        print("[Init] Seeding database...")
-        seed_database()
-        db = get_db()
-        run_match_for_all(db, "default")
-        db.close()
-        print("[Init] 40 mock jobs seeded and matched")
-
-    port = int(os.environ.get("PORT", 8000))
-    server = ThreadingHTTPServer(("0.0.0.0", port), JobMatchHandler)
-    print(f"\n[Server] JobMatch AI running at http://localhost:{port}")
-    print(f"  Health:   http://localhost:{port}/api/health")
-    print(f"  All Jobs: http://localhost:{port}/api/jobs/all")
-    print(f"  Featured: http://localhost:{port}/api/featured")
-    print(f"  Apply:    http://localhost:{port}/api/applications")
-    print(f"  Ctrl+C to stop\n")
     try:
+        # Init
+        print("[Init] Starting database initialization...", flush=True)
+        init_db()
+        db = get_db()
+        job_count = db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        db.close()
+        print(f"[Init] Database ready, {job_count} jobs found", flush=True)
+
+        # 快速就绪：先启动 HTTP 服务，让健康检查通过
+        port = int(os.environ.get("PORT", 8000))
+        server = ThreadingHTTPServer(("0.0.0.0", port), JobMatchHandler)
+        print(f"\n[Server] JobMatch AI starting on port {port}...", flush=True)
+
+        # 后台线程：如果数据库为空，种子数据
+        if job_count == 0:
+            print("[Init] Seeding 40 mock jobs in background...", flush=True)
+            def bg_seed():
+                try:
+                    db2 = get_db()
+                    seed_database()
+                    run_match_for_all(db2, "default")
+                    db2.close()
+                    print("[BG] 40 mock jobs seeded and matched", flush=True)
+                except Exception as e:
+                    print(f"[BG ERROR] Seed failed: {e}", flush=True)
+                    traceback.print_exc()
+            Thread(target=bg_seed, daemon=True).start()
+
+        print(f"  Health:   http://0.0.0.0:{port}/api/health", flush=True)
+        print(f"  All Jobs: http://0.0.0.0:{port}/api/jobs/all", flush=True)
+        print(f"  Featured: http://0.0.0.0:{port}/api/featured", flush=True)
+        print(f"  Ctrl+C to stop\n", flush=True)
+
         server.serve_forever()
-    except KeyboardInterrupt:
-        print("\n[Server] Stopped")
-        server.server_close()
+    except Exception as e:
+        print(f"\n[FATAL] Server crashed: {e}", flush=True)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
