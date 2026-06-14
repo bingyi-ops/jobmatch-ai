@@ -1299,22 +1299,42 @@ class JobMatchHandler(BaseHTTPRequestHandler):
             missing_skills = [s for s in (jd_skills or []) if not any(us.lower() in s.lower() or s.lower() in us.lower() for us in user_skills)]
 
             # 基础面试题（秒返，不调LLM）
+            proj_text = '、'.join(projects[:3]) if projects else '相关项目'
+            exp_text = ability.get('experience','相关实习/工作') if ability else '相关经历'
+            title = job['title'] if job else '该岗位'
+            company = job['company'] if job else '我们公司'
             questions = [
-                {"id":1,"question":f"请做一个自我介绍，重点突出与{job['title'] if job else '该岗位'}相关的经历和技能。"},
-                {"id":2,"question":f"根据JD要求（{', '.join(jd_skills[:4]) if jd_skills else '见岗位描述'}），你认为自己最匹配的优势是什么？最大的不足是什么？"},
-                {"id":3,"question":"请描述一个你通过快速学习解决技术难题的具体经历。"},
-                {"id":4,"question":f"{'你了解'+job['company']+'吗' if job and job['company'] else '对我们公司'}？为什么想加入？"},
-                {"id":5,"question":"如果入职后发现实际工作与JD描述有较大差距，你会怎么处理？"},
+                {"id":1,"question":f"你在{exp_text}中，遇到过最大的困难或挫折是什么？你是如何解决的？"},
+                {"id":2,"question":f"请详细介绍一下你在{proj_text}中的具体角色和贡献，你从中学到了什么？为什么觉得做得比其他人更好？"},
+                {"id":3,"question":f"你的经历和技能（{', '.join(user_skills[:4]) if user_skills else '见简历'}）与{title}这个岗位最匹配的点是什么？最大的差距在哪里？"},
+                {"id":4,"question":f"你对{company}和这个行业有什么了解？你未来3-5年的职业发展规划是什么？"},
+                {"id":5,"question":f"请举一个具体例子说明你的沟通协作或创新能力。如果入职{title}，你打算如何快速上手？"},
             ]
 
             # LLM 生成个性化面试题（仅在前端传 use_ai=true 时触发）
             use_ai = body.get("use_ai", False)
             if use_ai:
                 try:
-                    prompt = f"""你是面试官。根据以下信息生成5道个性化面试题，针对候选人技能缺口。
-候选人：技能{', '.join(user_skills[:8])}，学历{ability.get('education','')}，经验{ability.get('experience','')}
-岗位：{job['title'] if job else ''}@{job['company'] if job else ''}，JD摘要{jd_text[:400]}，JD技能{', '.join(jd_skills[:6])}
-缺口：{', '.join(missing_skills[:4]) if missing_skills else '无'}。5道混合题型，每行1道，200字。"""
+                    prompt = f"""你是资深面试官。根据候选人真实经历和岗位要求设计5道面试题，考察软性素质（沟通表达、逻辑思维、抗压性、自驱力、创新能力）。
+
+【候选人真实信息】
+技能：{', '.join(user_skills) if user_skills else '未知'}
+学历：{ability.get('education','未知') if ability else '未知'}
+经历：{ability.get('experience','未知') if ability else '未知'}
+项目：{', '.join(projects) if projects else '无'}
+技能缺口（vs岗位）：{', '.join(missing_skills[:4]) if missing_skills else '无明显缺口'}
+
+【目标岗位】
+{title}@{company}
+JD要求：{', '.join(jd_skills[:6]) if jd_skills else '见描述'}
+JD摘要：{jd_text[:300]}
+
+【出题要求】
+1. 从候选人真实经历出发追问细节（项目、实习、遇到的困难等）
+2. 考察候选人与岗位匹配度及成长潜力
+3. 混合行为面试+情景模拟
+4. 每道题15-40字，简洁有力
+5. 返回格式：每行1道题。共5道题"""
                     llm_result = asyncio.run(llm.chat([{"role":"user","content":prompt}], temperature=0.8, max_tokens=400))
                     if llm_result:
                         ai_qs = [{"id":i+1,"question":l.strip()} for i,l in enumerate(llm_result.strip().split('\n')) if len(l.strip())>10]
