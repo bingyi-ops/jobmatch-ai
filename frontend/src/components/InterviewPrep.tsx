@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { Play, Send, ArrowLeft, Sparkles, ThumbsUp, ThumbsDown, X, FileText } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Play, Send, ArrowLeft, Sparkles, ThumbsUp, ThumbsDown, X, FileText, Loader2 } from 'lucide-react'
+import { api } from '../api/client'
 
 interface Props {
   jobTitle: string
@@ -51,13 +52,18 @@ export default function InterviewPrep({ jobTitle, jdSkills, applicationId, jobId
   const [questions, setQuestions] = useState<{text:string;category:string;categoryColor:string;tips:string;id:string}[]>([])
   const [loadingQs, setLoadingQs] = useState(false)
 
-  // 初始化 fallback 题目
-  if (questions.length === 0 && MOCK_QUESTIONS.length > 0) { fallbackQuestions() }
+  const fallbackQuestions = () => {
+    setQuestions(MOCK_QUESTIONS.flatMap(q =>
+      q.questions.map((qtext, i) => ({ text: qtext, category: q.category, categoryColor: q.categoryColor, tips: q.tips, id: `${q.id}-${i}` }))
+    ))
+  }
+
+  useEffect(() => { if (questions.length === 0) fallbackQuestions() }, [])
 
   const startMock = async () => {
     setLoadingQs(true)
     try {
-      const res = await api.startMockInterview({ job_id: jobId })
+      const res = await api.startMockInterview({ job_id: jobId || 0 })
       if (res.questions?.length > 0) {
         setQuestions(res.questions.map((q:any, i:number) => ({
           text: q.question, category: '个性化面试', categoryColor: '#10B981', tips: '', id: `q-${i}`
@@ -71,12 +77,6 @@ export default function InterviewPrep({ jobTitle, jdSkills, applicationId, jobId
     setCurrentQ(0)
     setEvaluations([])
     setCurrentEval(null)
-  }
-
-  const fallbackQuestions = () => {
-    setQuestions(MOCK_QUESTIONS.flatMap(q =>
-      q.questions.map((qtext, i) => ({ text: qtext, category: q.category, categoryColor: q.categoryColor, tips: q.tips, id: `${q.id}-${i}` }))
-    ))
   }
 
   const submitAnswer = () => {
