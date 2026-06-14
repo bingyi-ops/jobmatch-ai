@@ -12,15 +12,10 @@ const INDUSTRIES = ['', '互联网', '制造业', '金融', '教育', '医疗', 
 const CITIES = ['', '北京', '上海', '广州', '深圳', '杭州', '成都', '武汉', '南京']
 
 function loadWeights() {
-  try {
-    const raw = localStorage.getItem('jm_weights')
-    if (raw) return JSON.parse(raw)
-  } catch {}
-  return { w1: 45, w2: 30, w3: 25, threshold: 60 }
+  try { const raw = localStorage.getItem('jm_weights'); if (raw) { const w = JSON.parse(raw); return { w1: w.w1 ?? 50, w2: w.w2 ?? 50, threshold: w.threshold ?? 60 } } } catch {}
+  return { w1: 50, w2: 50, threshold: 60 }
 }
-function saveWeights(w: { w1: number; w2: number; w3: number; threshold: number }) {
-  localStorage.setItem('jm_weights', JSON.stringify(w))
-}
+function saveWeights(w: { w1: number; w2: number; threshold: number }) { localStorage.setItem('jm_weights', JSON.stringify(w)) }
 
 export default function FeaturedPage() {
   const [jobs, setJobs] = useState<JobCard[]>([])
@@ -39,8 +34,7 @@ export default function FeaturedPage() {
   // 权重配置 (localStorage 持久化) — 阈值也从这里取，统一管理
   const [weights, setWeights] = useState(loadWeights)
   const [showWeights, setShowWeights] = useState(false)
-  const setW1 = (v: number) => { const w = { ...weights, w1: v, w2: Math.max(0, 100 - v - weights.w3), w3: Math.min(100 - v, weights.w3) }; w.w3 = 100 - w.w1 - w.w2; setWeights(w); saveWeights(w) }
-  const setW2 = (v: number) => { const w = { ...weights, w2: v, w1: Math.max(0, 100 - v - weights.w3), w3: Math.min(100 - v, weights.w3) }; w.w3 = 100 - w.w1 - w.w2; setWeights(w); saveWeights(w) }
+  const setW1 = (v: number) => { const w2 = 100 - v; const w = { ...weights, w1: v, w2 }; setWeights(w); saveWeights(w) }
   const setThreshold = (v: number) => { const w = { ...weights, threshold: v }; setWeights(w); saveWeights(w) }
 
   useEffect(() => {
@@ -66,7 +60,7 @@ export default function FeaturedPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await api.getFeatured({ page: p, page_size: 10, min_score: weights.threshold, type, industry, city, w1: weights.w1, w2: weights.w2, w3: weights.w3 })
+      const data = await api.getFeatured({ page: p, page_size: 10, min_score: weights.threshold, type, industry, city, w1: weights.w1, w2: weights.w2 })
       setJobs(data.items)
       setTotal(data.total)
       setTodayNew(data.today_new)
@@ -142,27 +136,24 @@ export default function FeaturedPage() {
         <div className="bg-[#1E293B]/40 border border-white/5 rounded-xl mb-4 overflow-hidden">
           <button onClick={() => setShowWeights(!showWeights)}
             className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">
-            <span className="flex items-center gap-2"><SlidersHorizontal className="w-4 h-4" />调分配置 · 我擅长{weights.w1}% 公司需要{weights.w2}% 我喜欢{weights.w3}% · 阈值{weights.threshold}分</span>
+            <span className="flex items-center gap-2"><SlidersHorizontal className="w-4 h-4" />调分配置 · 我擅长{weights.w1}% 我喜欢{weights.w2}% · 阈值{weights.threshold}分</span>
             {showWeights ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
           {showWeights && (
             <div className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3">
-              <div className="grid grid-cols-3 gap-4 text-xs">
+              <div className="grid grid-cols-2 gap-6 text-xs">
                 <div>
                   <div className="flex justify-between text-gray-400 mb-1"><span>我擅长</span><span className="text-green-400 font-bold">{weights.w1}%</span></div>
-                  <input type="range" min={10} max={80} value={weights.w1} onChange={e => setW1(Number(e.target.value))}
+                  <input type="range" min={10} max={90} value={weights.w1} onChange={e => setW1(Number(e.target.value))}
                     className="w-full accent-green-500 h-1.5" />
+                  <span className="text-[10px] text-gray-600">简历 vs JD要求</span>
                 </div>
                 <div>
-                  <div className="flex justify-between text-gray-400 mb-1"><span>公司需要</span><span className="text-orange-400 font-bold">{weights.w2}%</span></div>
-                  <input type="range" min={10} max={80} value={weights.w2} onChange={e => setW2(Number(e.target.value))}
-                    className="w-full accent-orange-500 h-1.5" />
-                </div>
-                <div>
-                  <div className="flex justify-between text-gray-400 mb-1"><span>我喜欢</span><span className="text-blue-400 font-bold">{weights.w3}%</span></div>
-                  <input type="range" min={0} max={80} value={weights.w3} onChange={e => {
-                    const v = Number(e.target.value); const w = { ...weights, w3: v, w1: Math.max(10, 100 - v - weights.w2) }; w.w2 = 100 - w.w1 - w.w3; setWeights(w); saveWeights(w)
+                  <div className="flex justify-between text-gray-400 mb-1"><span>我喜欢</span><span className="text-blue-400 font-bold">{weights.w2}%</span></div>
+                  <input type="range" min={10} max={90} value={weights.w2} onChange={e => {
+                    const v = Number(e.target.value); setW1(100 - v)
                   }} className="w-full accent-blue-500 h-1.5" />
+                  <span className="text-[10px] text-gray-600">偏好 vs 岗位条件</span>
                 </div>
               </div>
               <div className="flex items-center gap-3 text-xs">

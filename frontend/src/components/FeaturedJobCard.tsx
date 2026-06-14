@@ -30,9 +30,8 @@ export default function FeaturedJobCard({ job, onFeedback }: Props) {
   const scoreBar = (s: number) => s >= 85 ? 'bg-green-500' : s >= 70 ? 'bg-blue-500' : s >= 55 ? 'bg-yellow-500' : 'bg-red-500'
 
   const radarData = [
-    { subject: '我喜欢', value: job.interest_score, fullMark: 100 },
     { subject: '我擅长', value: job.ability_score, fullMark: 100 },
-    { subject: '公司需要', value: job.market_score, fullMark: 100 },
+    { subject: '我喜欢', value: job.interest_score, fullMark: 100 },
   ]
 
   const handleSave = async () => {
@@ -117,9 +116,8 @@ export default function FeaturedJobCard({ job, onFeedback }: Props) {
             {/* Scores */}
             <div className="flex gap-3 mb-2">
               {[
-                { label: '喜欢', score: job.interest_score, color: 'text-blue-400' },
                 { label: '擅长', score: job.ability_score, color: 'text-green-400' },
-                { label: '需要', score: job.market_score, color: 'text-orange-400' },
+                { label: '喜欢', score: job.interest_score, color: 'text-blue-400' },
               ].map(s => (
                 <div key={s.label} className="text-center">
                   <div className={`text-sm font-bold ${s.color}`}>{s.score}</div>
@@ -165,9 +163,8 @@ export default function FeaturedJobCard({ job, onFeedback }: Props) {
                   <span className="text-gray-600">（0-100分制）</span>
                 </p>
                 {[
-                  { label: '我擅长', sub: '学历+技能+项目', score: job.ability_score, icon: '🧠' },
-                  { label: '公司需要', sub: '学历达标+专业对口+经验+职责+稳定性', score: job.market_score, icon: '🏢' },
-                  { label: '我喜欢', sub: '城市+行业+薪资+岗位方向', score: job.interest_score, icon: '❤️' },
+                  { label: '我擅长', sub: '学历·专业·技能·经验·项目·稳定性·公司信息', score: job.ability_score, icon: '🧠' },
+                  { label: '我喜欢', sub: '城市·行业·薪资·岗位方向', score: job.interest_score, icon: '❤️' },
                 ].map(dim => (
                   <div key={dim.label}>
                     <div className="flex items-center justify-between mb-0.5">

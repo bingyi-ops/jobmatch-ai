@@ -574,14 +574,63 @@ def _score_role_match(job: dict, interest: dict) -> float:
 
 # ═══════════════════ 综合评分汇总 ═══════════════════
 
-# ═══════════════════ 综合评分汇总（两维度）═══════════════════
+# ═══════════════════ 综合评分汇总（两维度 + 可配权重 + 自定义维度）═══════════════════
+
+# 默认子维度权重
+DEFAULT_ABILITY_WEIGHTS = {"education":15,"major":15,"skills":30,"experience":15,"projects":10,"stability":5,"custom":10}
+DEFAULT_INTEREST_WEIGHTS = {"city":25,"industry":25,"salary":20,"role":25,"custom":5}
+
+def _get_dim_weights(profile: dict, defaults: dict) -> dict:
+    """从用户画像中读取子维度权重，无则用默认值"""
+    w = profile.get("dim_weights", {}) if profile else {}
+    result = {}
+    for key, default in defaults.items():
+        result[key] = w.get(key, default)
+    return result
+
+def _score_custom_dims(job: dict, custom_dims: list) -> tuple[float, list]:
+    """评分用户自定义维度：匹配 JD文本+公司信息 vs 用户输入的关键词"""
+    if not custom_dims:
+        return 5.0, []
+    jd_text = (job["jd_text"] or "").lower()
+    title = (job["title"] or "").lower()
+    company = (job["company"] or "").lower()
+    search_text = jd_text + " " + title + " " + company
+    results = []
+    for dim in custom_dims:
+        name = dim.get("name", "自定义")
+        keywords = [k.lower().strip() for k in dim.get("keywords", []) if k.strip()]
+        if not keywords:
+            results.append({"name": name, "score": 5})
+            continue
+        hits = sum(1 for kw in keywords if kw in search_text)
+        ratio = hits / max(len(keywords), 1)
+        score = min(ratio * 10, 10)
+        results.append({"name": name, "score": round(score, 1), "hits": hits, "total": len(keywords)})
+    avg = sum(r["score"] for r in results) / max(len(results), 1)
+    return round(avg, 1), results
+
+def _score_company_info(job: dict, ability: dict) -> float:
+    """匹配用户输入的公司信息 vs 岗位/公司"""
+    notes = (ability.get("company_notes") or "").lower()
+    if not notes or len(notes) < 5:
+        return 5.0  # 无公司信息→默认5分
+    jd_text = (job["jd_text"] or "").lower()
+    company = (job["company"] or "").lower()
+    search_text = jd_text + " " + company
+    # 按词组拆分用户输入，计算命中率
+    words = [w.strip() for w in notes.replace("，",",").replace("、",",").split(",") if len(w.strip())>=2]
+    if not words:
+        return 5.0
+    hits = sum(1 for w in words if w in search_text)
+    return round(min(hits / max(len(words), 1) * 10, 10), 1)
 
 def compute_match(job: dict, ability: dict, interest: dict, breakers: list,
                   w1: int = 50, w2: int = 50) -> dict:
-    """两维度评分：我擅长(简历vsJD) + 我喜欢(偏好vs岗位)
+    """两维度动态评分
 
-    我擅长(6指标): 学历层次 + 专业对口 + 技能匹配 + 经验年限 + 项目经验 + 稳定性
-    我喜欢(4指标): 城市 + 行业 + 薪资 + 岗位方向
+    我擅长: 学历+专业+技能+经验+项目+稳定性+公司信息+自定义维度 (权重可配)
+    我喜欢: 城市+行业+薪资+岗位方向+自定义维度 (权重可配)
     """
     # 0. 一票否决
     filtered, filter_reason = _check_deal_breakers(job, breakers)
@@ -589,27 +638,39 @@ def compute_match(job: dict, ability: dict, interest: dict, breakers: list,
         return {"job_id": job["id"], "total_score": 0, "total_score_pct": 0,
                 "ability": {"total": 0, "subs": {}, "verdict": filter_reason},
                 "interest": {"total": 0, "subs": {}, "verdict": ""},
-                "suggestion": "该岗位命中不可接受项：" + filter_reason, "is_filtered": True}
+                "suggestion": "命中不可接受项：" + filter_reason, "is_filtered": True}
 
-    # 1. 我擅长 — 简历 vs JD要求 (6指标, 每个0-10分)
-    a1 = _score_education_level(ability)       # 学历层次
-    a2 = _score_major_match(job, ability)       # 专业对口
-    a3 = _score_skills_mastery(ability)         # 技能匹配
-    a4 = _score_exp_years_match(job, ability)   # 经验年限
-    a5 = _score_project_experience(ability)     # 项目经验
-    a6 = _score_work_stability(ability)         # 工作稳定性
-    ability_total = round((a1 + a2 + a3*1.2 + a4 + a5 + a6) / 6.2, 1)  # 技能权重1.2倍
-    ability_subs = {"education": a1, "major": a2, "skills": a3, "experience": a4, "projects": a5, "stability": a6}
-    ability_verdict = _ability2_verdict(ability_total, ability_subs, job)
+    aw = _get_dim_weights(ability, DEFAULT_ABILITY_WEIGHTS)
+    iw = _get_dim_weights(interest, DEFAULT_INTEREST_WEIGHTS)
 
-    # 2. 我喜欢 — 偏好 vs 岗位条件 (4指标, 每个0-10分)
-    b1 = _score_city_match(job, interest)
-    b2 = _score_industry_match(job, interest)
-    b3 = _score_salary_match(job, interest)
-    b4 = _score_role_match(job, interest)
-    interest_total = round(b1 * 0.25 + b2 * 0.25 + b3 * 0.20 + b4 * 0.30, 1)
-    interest_subs = {"city": b1, "industry": b2, "salary": b3, "role": b4}
-    interest_verdict = _interest2_verdict(interest_total, interest_subs)
+    # 1. 我擅长子指标
+    sub_a = {}
+    sub_a["education"] = _score_education_level(ability)
+    sub_a["major"] = _score_major_match(job, ability)
+    sub_a["skills"] = _score_skills_mastery(ability)
+    sub_a["experience"] = _score_exp_years_match(job, ability)
+    sub_a["projects"] = _score_project_experience(ability)
+    sub_a["stability"] = _score_work_stability(ability)
+    sub_a["company_info"] = _score_company_info(job, ability)
+    custom_score_a, custom_detail_a = _score_custom_dims(job, ability.get("custom_dims", []) if ability else [])
+    sub_a["custom"] = custom_score_a
+
+    wsum_a = sum(aw.values()) or 1
+    ability_total = round(sum(sub_a[k] * aw.get(k, 10) for k in sub_a) / wsum_a, 1)
+    ability_verdict = _ability2_verdict(ability_total, sub_a)
+
+    # 2. 我喜欢子指标
+    sub_i = {}
+    sub_i["city"] = _score_city_match(job, interest)
+    sub_i["industry"] = _score_industry_match(job, interest)
+    sub_i["salary"] = _score_salary_match(job, interest)
+    sub_i["role"] = _score_role_match(job, interest)
+    custom_score_i, custom_detail_i = _score_custom_dims(job, interest.get("custom_dims", []) if interest else [])
+    sub_i["custom"] = custom_score_i
+
+    wsum_i = sum(iw.values()) or 1
+    interest_total = round(sum(sub_i[k] * iw.get(k, 10) for k in sub_i) / wsum_i, 1)
+    interest_verdict = _interest2_verdict(interest_total, sub_i)
 
     # 3. 综合加权
     total = round(ability_total * w1 / 100 + interest_total * w2 / 100, 1)
@@ -617,21 +678,21 @@ def compute_match(job: dict, ability: dict, interest: dict, breakers: list,
     suggestion = _generate_suggestion2(ability_total, interest_total, total)
 
     return {"job_id": job["id"], "total_score": total, "total_score_pct": total_pct,
-            "ability": {"total": ability_total, "subs": ability_subs, "verdict": ability_verdict},
-            "interest": {"total": interest_total, "subs": interest_subs, "verdict": interest_verdict},
+            "ability": {"total": ability_total, "subs": sub_a, "verdict": ability_verdict, "weights": aw, "custom_detail": custom_detail_a},
+            "interest": {"total": interest_total, "subs": sub_i, "verdict": interest_verdict, "weights": iw, "custom_detail": custom_detail_i},
             "suggestion": suggestion, "is_filtered": False}
 
-def _ability2_verdict(total, subs, job):
+def _ability2_verdict(total, subs):
     parts = []
-    if subs["education"] >= 8: parts.append("学历优秀")
-    elif subs["education"] < 5: parts.append("学历偏低")
-    if subs["major"] >= 8: parts.append("专业对口")
-    elif subs["major"] < 5: parts.append(f"专业不完全匹配(JD偏好:{_infer_jd_major_req(job['jd_text'] or '') or '不限'})")
-    if subs["skills"] >= 7: parts.append("技能高度匹配")
-    elif subs["skills"] < 4: parts.append("技能差距较大")
-    if subs["experience"] >= 8: parts.append("经验充足")
-    elif subs["experience"] < 5: parts.append(f"经验不足(JD要求约{_infer_jd_exp_years(job['jd_text'] or '') or '?'}年)")
-    if subs["stability"] >= 8: parts.append("履历稳定")
+    if subs.get("education",5) >= 8: parts.append("学历优秀")
+    elif subs.get("education",5) < 5: parts.append("学历偏低")
+    if subs.get("major",5) >= 8: parts.append("专业对口")
+    elif subs.get("major",5) < 5: parts.append("专业匹配度不足")
+    if subs.get("skills",5) >= 7: parts.append("技能高度匹配")
+    elif subs.get("skills",5) < 4: parts.append("技能差距较大")
+    if subs.get("experience",5) >= 8: parts.append("经验充足")
+    elif subs.get("experience",5) < 5: parts.append("经验年限不足")
+    if subs.get("company_info",5) >= 7: parts.append("公司信息匹配")
     if not parts: parts.append("各方面均达标")
     if total >= 8: parts.append("→ 非常胜任")
     elif total >= 5: parts.append("→ 基本胜任")
@@ -640,16 +701,13 @@ def _ability2_verdict(total, subs, job):
 
 def _interest2_verdict(total, subs):
     parts = []
-    if subs["city"] >= 9: parts.append("城市首选")
-    elif subs["city"] >= 7: parts.append("城市可接受")
-    elif subs["city"] < 4: parts.append("城市不匹配")
-    if subs["industry"] >= 9: parts.append("行业命中")
-    elif subs["industry"] >= 7: parts.append("行业相关")
-    if subs["salary"] >= 8: parts.append("薪资满意")
-    elif subs["salary"] >= 5: parts.append("薪资可接受")
-    else: parts.append("薪资偏低")
-    if subs["role"] >= 9: parts.append("岗位精准命中")
-    elif subs["role"] >= 7: parts.append("岗位方向相关")
+    if subs.get("city",5) >= 9: parts.append("城市首选")
+    elif subs.get("city",5) < 4: parts.append("城市不匹配")
+    if subs.get("industry",5) >= 9: parts.append("行业命中")
+    if subs.get("salary",5) >= 8: parts.append("薪资满意")
+    elif subs.get("salary",5) < 5: parts.append("薪资偏低")
+    if subs.get("role",5) >= 9: parts.append("岗位精准命中")
+    elif subs.get("role",5) < 5: parts.append("岗位方向不符")
     if not parts: parts.append("无特别偏好")
     if total >= 8: parts.append("→ 非常想去")
     elif total >= 5: parts.append("→ 可以考虑")
@@ -662,22 +720,19 @@ def _generate_suggestion2(ability, interest, total):
     elif total >= 6.5: tips.append("推荐投递，整体匹配度良好")
     elif total >= 5.0: tips.append("可关注，部分维度有提升空间")
     else: tips.append("匹配度偏低，建议提升技能或调整偏好")
-    if ability < interest:
+    if ability < interest and ability < 5:
         tips.append(f"短板在「我擅长」({ability}/10)：建议补充JD要求的技能或经验")
-    elif interest < ability:
-        tips.append(f"短板在「我喜欢」({interest}/10)：当前岗位条件与你的偏好有差距，可调整期望")
+    elif interest < ability and interest < 5:
+        tips.append(f"短板在「我喜欢」({interest}/10)：可调整期望城市/行业/薪资范围")
     return "。".join(tips)
 
 # ═══════════════════ 匹配执行 ═══════════════════
 
 def _match_single_job(db, job, ability, interest, breakers, user_key="default",
-                      w1=45, w2=30, w3=25) -> dict | None:
-    """对单个岗位执行完整评分并写入 match_records"""
-    result = compute_match(job, ability, interest, breakers, w1, w2, w3)
+                      w1=50, w2=50) -> dict | None:
+    result = compute_match(job, ability, interest, breakers, w1, w2)
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
     a_total = result["ability"]["total"]
-    m_total = result["market"]["total"]
     i_total = result["interest"]["total"]
     overlap_pct = result["total_score_pct"]
 
@@ -692,9 +747,9 @@ def _match_single_job(db, job, ability, interest, breakers, user_key="default",
         db.execute(
             """INSERT INTO match_records (job_id, interest_score, ability_score, market_score,
                overlap_score, match_reasons, is_filtered, filter_reason, created_at, user_key)
-               VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, ?)""",
+               VALUES (?, ?, ?, 0, ?, ?, 0, '', ?, ?)""",
             (job["id"], round(i_total * 10), round(a_total * 10),
-             round(m_total * 10), overlap_pct, result["suggestion"], now, user_key),
+             overlap_pct, result["suggestion"], now, user_key),
         )
 
     # 在返回结果中附加评分卡
@@ -709,17 +764,14 @@ def _match_single_job(db, job, ability, interest, breakers, user_key="default",
         "score_card": result
     }
 
-def run_match_for_all(db, user_key="default", w1=45, w2=30, w3=25):
-    """对所有岗位执行匹配评分（同步版本，可能较慢）"""
+def run_match_for_all(db, user_key="default", w1=50, w2=50):
     db.execute("PRAGMA foreign_keys = OFF")
     db.execute("DELETE FROM match_records WHERE user_key = ?", (user_key,))
     db.execute("PRAGMA foreign_keys = ON")
-
     interest, ability, breakers = _get_user_profile(db, user_key)
     jobs = db.execute("SELECT * FROM jobs").fetchall()
-
     for job in jobs:
-        _match_single_job(db, job, ability, interest, breakers, user_key, w1, w2, w3)
+        _match_single_job(db, job, ability, interest, breakers, user_key, w1, w2)
     db.commit()
 
 def bg_run_match(user_key="default"):
@@ -1202,16 +1254,13 @@ class JobMatchHandler(BaseHTTPRequestHandler):
             rtype = params.get("type", [""])[0]
             industry = params.get("industry", [""])[0]
             city = params.get("city", [""])[0]
-            # 可配置权重（前端滑块传入）
-            w1 = int(params.get("w1", ["45"])[0])
-            w2 = int(params.get("w2", ["30"])[0])
-            w3 = int(params.get("w3", ["25"])[0])
-            # 标准化权重确保总和100
-            wsum = w1 + w2 + w3
+            # 可配置权重（前端滑块传入）— 两维度：我擅长 + 我喜欢
+            w1 = int(params.get("w1", ["50"])[0])
+            w2 = int(params.get("w2", ["50"])[0])
+            wsum = w1 + w2
             if wsum != 100:
                 w1 = round(w1 / wsum * 100)
-                w2 = round(w2 / wsum * 100)
-                w3 = 100 - w1 - w2
+                w2 = 100 - w1
 
             user_key = self.get_user_key()
             conditions = ["mr.is_filtered = 0", "mr.user_key = ?"]
@@ -1256,10 +1305,9 @@ class JobMatchHandler(BaseHTTPRequestHandler):
                 raw_ability = d.get("ability_score", 0)
                 raw_market = d.get("market_score", 0)
                 raw_interest = d.get("interest_score", 0)
-                new_overlap = round(raw_ability * w1 / 100 + raw_market * w2 / 100 + raw_interest * w3 / 100)
-
+                new_overlap = round(raw_ability * w1 / 100 + raw_interest * w2 / 100)
                 d["overlap_score"] = new_overlap
-                d["w1"] = w1; d["w2"] = w2; d["w3"] = w3
+                d["w1"] = w1; d["w2"] = w2
                 scored_items.append(d)
 
             # 按新综合分排序 + 阈值过滤
@@ -1282,7 +1330,7 @@ class JobMatchHandler(BaseHTTPRequestHandler):
             return self.json_response({
                 "items": page_items, "total": total, "page": page,
                 "page_size": page_size, "today_new": today_count,
-                "weights": {"w1": w1, "w2": w2, "w3": w3},
+                "weights": {"w1": w1, "w2": w2},
             })
 
         # ── Applications ──
